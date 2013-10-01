@@ -1,0 +1,22 @@
+{
+  "MAIN_TITLE"                           : "Playlist",
+  "PREFERENCES"                          : "Preferences",
+  
+  "MENU_ACTION_PLAYLIST_MAINTENANCE"     : "Playlist maintenance",
+  "MENU_ACTION_CREATE_PLAYLIST"          : "Create new playlist",
+  "MENU_ACTION_ADD_TRACKS"               : "Add tracks to playlist",
+  "MENU_ACTION_DELETE_PLAYLIST"          : "Delete playlist",
+  "MENU_ACTION_REMOVE_TRACKS"            : "Remove tracks from playlist",
+  "MENU_ACTION_RENAME_PLAYLIST"          : "Rename playlist",
+  "MENU_TITLE_TRACK_ACTIONS"             : "Track actions",
+
+  "TITLE_ADD_TO_PLAYLIST"                : "Add to playlist [%s]",
+  "MSG_EMPTY_PLAYLIST"                   : "Playlist is empty",
+  "MSG_TRACK_ALREADY_IN_PLAYLIST"        : "Track already in playlist: %s [key=%s]",
+  "MSG_TRACK_ADDED_TO_PLAYLIST"          : "Track %s with key %s added to playlist %s",
+  "ERROR_NO_METADATA"                    : "ERROR: No metadata found for track key %s ",
+  "ERROR_NO_TRACK_FOUND"                 : "ERROR: No track found for track %s [key=%s]",
+  "ERROR_NO_MEDIA_FOR_TRACK"             : "ERROR: No media found for track %s [key=%s]",
+  "ERROR_NO_TRACK_DATA"                  : "ERROR: No track data found for track %s [key=%s]",
+  "ERROR_TRACK_NOT_ADDED"                : "ERROR: Track not added"
+}

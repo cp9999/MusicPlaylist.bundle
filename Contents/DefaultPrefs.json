@@ -1,0 +1,14 @@
+[
+    {
+        "id": "username",
+        "label": "User name",
+        "type": "text",
+        "default": "me"
+    },
+    {
+        "id": "plexport",
+        "label": "Plex port",
+        "type": "text",
+        "default": "32400"
+    },
+]
