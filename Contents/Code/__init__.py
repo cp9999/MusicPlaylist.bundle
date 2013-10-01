@@ -82,7 +82,7 @@ def LoadGlobalData():
     
     pms_main_url = 'http://%s:%s' %(Network.Address, Prefs[PREFS__PLEXPORT])
     # For now: always use the main server URL
-    pms_main_url = PMS_URL_PLEX
+    #pms_main_url = PMS_URL_PLEX
     
     allPlaylists = loadPlaylists()   
     pass
