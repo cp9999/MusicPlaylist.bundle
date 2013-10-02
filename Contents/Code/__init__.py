@@ -15,10 +15,13 @@ PREFIX = '/music/playlists'
 PLUGIN_DIR = 'com.plexapp.plugins.playlist'
 PMS_URL_PLEX = 'http://192.168.10.20:32400'
 LIBRARY_SECTIONS = '/library/sections/'
+ART = 'art-default.png'
+ICON = 'icon-default.png'
 
 # Preferences
 PREFS__USERNAME = 'username'
 PREFS__PLEXPORT = 'plexport'
+
 
 # XML Root
 PLAYLIST_ROOT = 'playlist'
@@ -36,6 +39,16 @@ ATTR_AUDIOCHANNELS = 'audioChannels'
 ATTR_AUDIOCODEC = 'audioCodec'
 ATTR_CONTAINER = 'container'
 ATTR_VIEWGROUP = 'viewGroup'
+ATTR_SEARCH = 'search'
+ATTR_PROMPT = 'prompt'
+
+# Create new playlist
+NEW_PL_TITLE = 'title'
+NEW_PL_DESCRIPTION = 'description'
+NEW_PL_TYPE = 'playlist_type'
+PL_TYPE_SIMPLE = 'SIMPLE'
+PL_TYPE_SMART = 'SMART'
+PL_TYPES = [PL_TYPE_SIMPLE, PL_TYPE_SMART]
 
 # Resource stings
 TEXT_MAIN_TITLE = "MAIN_TITLE"
@@ -49,16 +62,27 @@ TEXT_MENU_ACTION_DELETE_PLAYLIST = "MENU_ACTION_DELETE_PLAYLIST"
 TEXT_MENU_ACTION_RENAME_PLAYLIST = "MENU_ACTION_RENAME_PLAYLIST"
 TEXT_MENU_TITLE_TRACK_ACTIONS = "MENU_TITLE_TRACK_ACTIONS"
 
+TEXT_MENU_CREATEPL_ENTER_TITLE = "MENU_CREATEPL_ENTER_TITLE"
+TEXT_MENU_CREATEPL_ENTER_DESCR = "MENU_CREATEPL_ENTER_DESCR"
+TEXT_MENU_CREATEPL_SELECT_TYPE = "MENU_CREATEPL_SELECT_TYPE"
+TEXT_MENU_CREATEPL_ENTER_TITLE_PROMPT = "MENU_CREATEPL_ENTER_TITLE_PROMPT"
+TEXT_MENU_CREATEPL_ENTER_DESCR_PROMPT = "MENU_CREATEPL_ENTER_DESCR_PROMPT"
+TEXT_MENU_CREATEPL_SELECT_TYPE_PROMPT = "MENU_CREATEPL_SELECT_TYPE_PROMPT"
+TEXT_MENU_CREATEPL_CREATE_LIST = "MENU_CREATEPL_CREATE_LIST"
+
 TEXT_TITLE_ADD_TO_PLAYLIST = "TITLE_ADD_TO_PLAYLIST"
 TEXT_MSG_EMPTY_PLAYLIST = "MSG_EMPTY_PLAYLIST"
 TEXT_MSG_TRACK_ALREADY_IN_PLAYLIST = "MSG_TRACK_ALREADY_IN_PLAYLIST"
 TEXT_MSG_TRACK_ADDED_TO_PLAYLIST = "MSG_TRACK_ADDED_TO_PLAYLIST"
+TEXT_MSG_PLAYLIST_CREATED = "MSG_PLAYLIST_CREATED"
 TEXT_ERROR_NO_METADATA = "ERROR_NO_METADATA"
 TEXT_ERROR_NO_TRACK_FOUND = "ERROR_NO_TRACK_FOUND"
 TEXT_ERROR_NO_MEDIA_FOR_TRACK = "ERROR_NO_MEDIA_FOR_TRACK"
 TEXT_ERROR_NO_TRACK_DATA = "ERROR_NO_TRACK_DATA"
 TEXT_ERROR_TRACK_NOT_ADDED = "ERROR_TRACK_NOT_ADDED"
-
+TEXT_ERROR_PLAYLIST_EXISTS = "ERROR_PLAYLIST_EXISTS"
+TEXT_ERROR_MISSING_TITLE = "ERROR_MISSING_TITLE"
+TEXT_ERROR_EMPTY_SEARCH_QUERY = "ERROR_EMPTY_SEARCH_QUERY" 
 
 ####################################################################################################
 def Start():
@@ -66,9 +90,14 @@ def Start():
     Plugin.AddPrefixHandler(PREFIX, MainMenu, NAME)
     Plugin.AddViewGroup('List', viewMode='List', mediaType='items')
     Plugin.AddViewGroup('InfoList', viewMode='InfoList', mediaType='items')
+    Plugin.AddViewGroup('Maintenance', viewMode='List', mediaType='items')
 
     ObjectContainer.title1 = L(TEXT_MAIN_TITLE)
     ObjectContainer.view_group = 'List'
+    ObjectContainer.art = R(ART)
+
+    DirectoryObject.thumb = R(ICON)
+    DirectoryObject.art = R(ART)    
     
     LoadGlobalData()
 
@@ -111,7 +140,7 @@ def MainMenu():
 @route(PREFIX +'/playlistmenu')
 def PlaylistMenu(title, key):
     # todo
-    oc = ObjectContainer(title2 = title, view_group='List', art = R('jukebox.png'), content = ContainerContent.Tracks, no_cache = True)    
+    oc = ObjectContainer(title2 = title, view_group='List', art = R('icon-default.png'), content = ContainerContent.Tracks, no_cache = True)    
     # load the playlist
     # This is an: etree.Element XML Element 
     playlist = LoadSinglePlaylist(key)
@@ -132,8 +161,6 @@ def createTrackObject(track):
     trackObject.duration = attributeAsInt(track.get(ATTR_DURATION))
     #if track.get('art') != None:
     #    to.art = pms_main_url + track.get('art')
-    #else:
-    #    to.art = R('music_playlist.jpg')
     if track.get(ATTR_THUMB) != None:
         trackObject.thumb = pms_main_url + track.get(ATTR_THUMB)
     partkey = track.get(ATTR_PARTKEY)
@@ -155,18 +182,53 @@ def createTrackObject(track):
 
 @route(PREFIX +'/maintenance')
 def MaintenanceMenu(title):
-    oc = ObjectContainer(title2 = title, view_group='List')    
-    oc.add(DirectoryObject(key = Callback(CreatePlaylistMenu, title = L(TEXT_MENU_ACTION_CREATE_PLAYLIST)), title = L(TEXT_MENU_ACTION_CREATE_PLAYLIST)))  
+    oc = ObjectContainer(title2 = title, view_group='List')
+    newsetting = { NEW_PL_TITLE : 'New playlist', NEW_PL_TYPE : PL_TYPE_SIMPLE, NEW_PL_DESCRIPTION : ''}
+    Log.Debug(newsetting[NEW_PL_TITLE])
     oc.add(DirectoryObject(key = Callback(BrowseMusicMenu, title = L(TEXT_MENU_ACTION_ADD_TRACKS)), title = L(TEXT_MENU_ACTION_ADD_TRACKS)))  
     oc.add(DirectoryObject(key = Callback(RemoveTracksMenu, title = L(TEXT_MENU_ACTION_REMOVE_TRACKS)), title = L(TEXT_MENU_ACTION_REMOVE_TRACKS)))  
     oc.add(DirectoryObject(key = Callback(RenamePlaylistMenu, title = L(TEXT_MENU_ACTION_RENAME_PLAYLIST)), title = L(TEXT_MENU_ACTION_RENAME_PLAYLIST)))
+    oc.add(DirectoryObject(key = Callback(CreatePlaylistMenu, settings = newsetting), title = L(TEXT_MENU_ACTION_CREATE_PLAYLIST)))  
     oc.add(DirectoryObject(key = Callback(DeletePlaylistMenu, title = L(TEXT_MENU_ACTION_DELETE_PLAYLIST)), title = L(TEXT_MENU_ACTION_DELETE_PLAYLIST)))
     
     return oc
 
-@route(PREFIX +'/createplaylist')
-def CreatePlaylistMenu(title):
-    return showMessage(message_text = 'TODO: create new playlist')
+@route(PREFIX +'/createplaylistoptions', settings=dict)
+def CreatePlaylistMenu(settings):
+    oc = ObjectContainer(title2 = L(TEXT_MENU_ACTION_CREATE_PLAYLIST), view_group='List', no_cache = True, no_history = True)    
+    oc.add(InputDirectoryObject(key = Callback(CreatePLSetOption, itype = NEW_PL_TITLE, settings = settings),
+                                title = Locale.LocalStringWithFormat(TEXT_MENU_CREATEPL_ENTER_TITLE , settings[NEW_PL_TITLE]),
+                                prompt = L(TEXT_MENU_CREATEPL_ENTER_TITLE_PROMPT)))
+    oc.add(InputDirectoryObject(key = Callback(CreatePLSetOption, itype = NEW_PL_DESCRIPTION, settings = settings),
+                                title = Locale.LocalStringWithFormat(TEXT_MENU_CREATEPL_ENTER_DESCR, settings[NEW_PL_DESCRIPTION]),
+                                prompt = L(TEXT_MENU_CREATEPL_ENTER_DESCR_PROMPT)))
+    oc.add(PopupDirectoryObject(key = Callback(CreatePLSelectTypeMenu, settings = settings),
+                                title = Locale.LocalStringWithFormat(TEXT_MENU_CREATEPL_SELECT_TYPE, settings[NEW_PL_TYPE])))
+    oc.add(DirectoryObject(key = Callback(CreatePLCreatePlaylist, settings = settings),
+                           title = L(TEXT_MENU_CREATEPL_CREATE_LIST)))  
+    return oc
+
+@route(PREFIX +'/setplaylistoption', settings=dict)
+def CreatePLSetOption(query, itype, settings):
+    settings[itype] = query
+    return CreatePlaylistMenu(settings)
+
+@route(PREFIX +'/selectplaylisttype', settings=dict)
+def CreatePLSelectTypeMenu(settings):
+    oc = ObjectContainer(title2 = L(TEXT_MENU_CREATEPL_SELECT_TYPE_PROMPT), view_group='List', no_cache = True, no_history = True)
+    oc.title1 = L(TEXT_MENU_CREATEPL_SELECT_TYPE_PROMPT)
+    for playlist_type in PL_TYPES:
+        oc.add(DirectoryObject(key = Callback(CreatePLSetOption, query = playlist_type, itype = NEW_PL_TYPE, settings = settings),
+                               title = playlist_type))         
+    return oc
+
+@route(PREFIX +'/createplaylist', settings=dict)
+def CreatePLCreatePlaylist(settings):
+    if settings[NEW_PL_TITLE] != None:
+        return addPlaylist(settings)
+        
+    return showMessage(L(TEXT_ERROR_MISSING_TITLE))
+
 
 @route(PREFIX +'/removetracks')
 def RemoveTracksMenu(title):
@@ -200,15 +262,17 @@ def BrowseMusicMenu(title):
     return oc
 
 @route(PREFIX +'/browsesection')
-def BrowseSectionMenu(parentUrl, title, section):
+def BrowseSectionMenu(parentUrl, title, section, append_trailing_slash = True):
     oc = ObjectContainer(title2 = title, view_group='List')
   
-    sectionUrl = parentUrl + section + '/'
+    sectionUrl = parentUrl + section 
+    if append_trailing_slash:
+        sectionUrl = sectionUrl + '/'
     el = XML.ElementFromURL(sectionUrl)
     Log.Debug('section element is "%s"' % XML.StringFromElement(el))
   
     viewgroup = el.get(ATTR_VIEWGROUP)
-    if (viewgroup == 'track'):
+    if (viewgroup == 'track' or firstElement(el, '//Track') != None):
         tracks = el.xpath('//Track')
         for track in tracks:
             title = track.get(ATTR_TITLE)
@@ -220,21 +284,34 @@ def BrowseSectionMenu(parentUrl, title, section):
         for section in sections:	
             title = section.get(ATTR_TITLE)
             key = section.get(ATTR_KEY)
-            if key.startswith('/'):
+            if attributeAsInt(section.get(ATTR_SEARCH)) != 0:
+                oc.add(InputDirectoryObject(key = Callback(SearchMenu, key = section.get(ATTR_KEY), title = section.get(ATTR_PROMPT)),
+                                            prompt = section.get(ATTR_PROMPT),
+                                            title = section.get(ATTR_TITLE)))
+            elif key.startswith('/'):
                 oc.add(DirectoryObject(key = Callback(BrowseSectionMenu, parentUrl = pms_main_url, title = title, section = key), title = title))
             else:
                 oc.add(DirectoryObject(key = Callback(BrowseSectionMenu, parentUrl = sectionUrl, title = title, section = key), title = title))
   
     return oc     
 
+def SearchMenu(query, key, title):
+    if query != None and len(query) > 0:
+        return BrowseSectionMenu(parentUrl = pms_main_url,
+                                 title = "%s '%s'" % (title, query),
+                                 section = '/%s&query=%s' % (key, query),
+                                 append_trailing_slash = False)
+    return showMessage(L(TEXT_ERROR_EMPTY_SEARCH_QUERY))
+
 @route(PREFIX +'/browsetrack')
 def BrowseTrackPopupMenu(key, tracktitle):
     oc = ObjectContainer(title2 = L(TEXT_MENU_TITLE_TRACK_ACTIONS), no_cache = True)
-
+    oc.title1 = L(TEXT_MENU_TITLE_TRACK_ACTIONS)
+    
     for playlistkey in allPlaylists.keys():
         listtitle = allPlaylists[playlistkey]
         oc.add(PopupDirectoryObject(key = Callback(addToPlaylist, playlistkey = playlistkey, key = key, tracktitle = tracktitle),
-                                    title = Locale.LocalStringWithFormat(TEXT_TITLE_ADD_TO_PLAYLIST, listtitle)))
+                                    title = listtitle))
     return oc
 
 
@@ -290,18 +367,34 @@ def addToPlaylist(playlistkey, key, tracktitle):
 
 def loadPlaylists():
     # Load all existing playlists (name only) for the current user
-    username = Prefs[PREFS__USERNAME]
-    playlistsName = '%s_allPlaylists' % username
+    playlistsName = getPlaylistName()
     allPlaylists = Data.LoadObject(playlistsName)
     if allPlaylists == None:
         allPlaylists = {}
-        allPlaylists['1'] = 'My first playlist'
-        allPlaylists['2'] = 'My second playlist'
-        allPlaylists['3'] = 'My third playlist'
         Data.SaveObject(playlistsName, allPlaylists)
 
     return allPlaylists
 
+
+@route(PREFIX +'/addplaylist', settings=dict)
+def addPlaylist(settings):
+    global allPlaylists
+    # Generate a new key!
+    if allPlaylists == None:
+        allPlaylists = {}
+    playlistKey = settings[NEW_PL_TITLE]
+    if playlistKey in allPlaylists.keys():
+        return showMessage(Locale.LocalStringWithFormat(TEXT_ERROR_PLAYLIST_EXISTS, playlistKey))
+    # For now, just set the title. Tobe changed to store the settings object in the allPlaylists dict
+    allPlaylists[playlistKey] = playlistKey
+    Data.SaveObject(getPlaylistName(), allPlaylists)
+    return showMessage(Locale.LocalStringWithFormat(TEXT_MSG_PLAYLIST_CREATED, playlistKey))
+
+@route(PREFIX +'/getplaylistname')
+def getPlaylistName():
+    username = Prefs[PREFS__USERNAME]
+    playlistsName = '%s_allPlaylists' % username
+    return playlistsName
 
 def LoadSinglePlaylist(playlistkey):   
     full_filename = GetPlaylistFileName(playlistkey)

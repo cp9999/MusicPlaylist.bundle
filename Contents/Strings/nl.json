@@ -8,15 +8,27 @@
   "MENU_ACTION_DELETE_PLAYLIST"          : "Afspeellijst verwijderen",
   "MENU_ACTION_REMOVE_TRACKS"            : "Liedjes uit afspeellijst verwijderen",
   "MENU_ACTION_RENAME_PLAYLIST"          : "Afspeellijst hernoemen",
-  "MENU_TITLE_TRACK_ACTIONS"             : "Track acties",
+  "MENU_TITLE_TRACK_ACTIONS"             : "Toevoegen aan afspeellijst",
+  
+  "MENU_CREATEPL_ENTER_TITLE"            : "Titel: %s",
+  "MENU_CREATEPL_ENTER_DESCR"            : "Omschrijving: %s",
+  "MENU_CREATEPL_SELECT_TYPE"            : "Type: %s",
+  "MENU_CREATEPL_ENTER_TITLE_PROMPT"     : "Titel ingeven",
+  "MENU_CREATEPL_ENTER_DESCR_PROMPT"     : "Omschrijving ingeven",
+  "MENU_CREATEPL_SELECT_TYPE_PROMPT"     : "Kies type",
+  "MENU_CREATEPL_CREATE_LIST"            : "Afspeellijst aanmaken met bovenstaande instellingen",
   
   "TITLE_ADD_TO_PLAYLIST"                : "Toevoegen aan afspeellijst [%s]",
   "MSG_EMPTY_PLAYLIST"                   : "Afspeellijst is leeg",
   "MSG_TRACK_ALREADY_IN_PLAYLIST"        : "Lied is al aanwezig in de afspeellijst: %s [key=%s]",
   "MSG_TRACK_ADDED_TO_PLAYLIST"          : "Lied %s met key %s toegevoegd aan afspeellijst %s",
+  "MSG_PLAYLIST_CREATED"                 : "Afspeellijst met titel %s aangemaakt",
   "ERROR_NO_METADATA"                    : "FOUT: Geen metadata gevonden voor lied met key %s ",
   "ERROR_NO_TRACK_FOUND"                 : "FOUT: Lied niet gevonden: %s key=%s]",
   "ERROR_NO_MEDIA_FOR_TRACK"             : "FOUT: Geen media gevonden voor lied %s [key=%s]",
   "ERROR_NO_TRACK_DATA"                  : "FOUT: Geen data gevonden voor lied %s [key=%s]",
-  "ERROR_TRACK_NOT_ADDED"                : "FOUT: Lied niet toegevoegd aan afpeellijst"
+  "ERROR_TRACK_NOT_ADDED"                : "FOUT: Lied niet toegevoegd aan afpeellijst",
+  "ERROR_PLAYLIST_EXISTS"                : "FOUT: Er bestaat al een afspeellijst met sleutel %s",
+  "ERROR_MISSING_TITLE"                  : "FOUT: Geen title opgegeven voor afspeellijst",
+  "ERROR_EMPTY_SEARCH_QUERY"             : "FOUT: Geen zoektekst opgegeven"
 }
