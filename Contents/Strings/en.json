@@ -7,8 +7,10 @@
   "MENU_ACTION_ADD_TRACKS"               : "Add tracks to playlist",
   "MENU_ACTION_DELETE_PLAYLIST"          : "Delete playlist",
   "MENU_ACTION_REMOVE_TRACKS"            : "Remove tracks from playlist",
+  "MENU_ACTION_REMOVE_TRACK"             : "Remove track",
   "MENU_ACTION_RENAME_PLAYLIST"          : "Rename playlist",
   "MENU_TITLE_TRACK_ACTIONS"             : "Add to playlist",
+  "MENU_TITLE_TRACK_REMOVE"              : "Remove tracks from %s",
   
   "MENU_CREATEPL_ENTER_TITLE"            : "Title: %s",
   "MENU_CREATEPL_ENTER_DESCR"            : "Description: %s",
@@ -17,12 +19,21 @@
   "MENU_CREATEPL_ENTER_DESCR_PROMPT"     : "Enter description",
   "MENU_CREATEPL_SELECT_TYPE_PROMPT"     : "Select type",
   "MENU_CREATEPL_CREATE_LIST"            : "Create playlist with above settings",
+  "MENU_RENAMEPL_PROMPT"                 : "Rename playlist to",
   
   "TITLE_ADD_TO_PLAYLIST"                : "Add to playlist [%s]",
+  "TITLE_CONFIRM_DELETE"                 : "Confirm delete",
+  "TITLE_DELETE_CANCELED"                : "Delete canceled",
+  "TITLE_CANCEL"                         : "Cancel",
+  
   "MSG_EMPTY_PLAYLIST"                   : "Playlist is empty",
   "MSG_TRACK_ALREADY_IN_PLAYLIST"        : "Track already in playlist: %s [key=%s]",
-  "MSG_TRACK_ADDED_TO_PLAYLIST"          : "Track %s with key %s added to playlist %s",
-  "MSG_PLAYLIST_CREATED"                 : "Playlist with title %s created",
+  "MSG_TRACK_ADDED_TO_PLAYLIST"          : "Track %s added to playlist %s",
+  "MSG_TRACK_REMOVED_FROM_PLAYLIST"      : "Track %s removed from playlist",
+  "MSG_PLAYLIST_CREATED"                 : "Playlist %s created with key %s",
+  "MSG_PLAYLIST_RENAMED"                 : "Playlist renamed to %s",
+  "MSG_PLAYLIST_DELETED"                 : "Playlist deleted",
+  
   "ERROR_NO_METADATA"                    : "ERROR: No metadata found for track key %s ",
   "ERROR_NO_TRACK_FOUND"                 : "ERROR: No track found for track %s [key=%s]",
   "ERROR_NO_MEDIA_FOR_TRACK"             : "ERROR: No media found for track %s [key=%s]",
@@ -30,5 +41,6 @@
   "ERROR_TRACK_NOT_ADDED"                : "ERROR: Track not added",
   "ERROR_PLAYLIST_EXISTS"                : "ERROR: playlist with key %s already exists",
   "ERROR_MISSING_TITLE"                  : "ERROR: No title for playlist",
-  "ERROR_EMPTY_SEARCH_QUERY"             : "ERROR: No search query provided"
+  "ERROR_EMPTY_SEARCH_QUERY"             : "ERROR: No search query provided",
+  "ERROR_NO_FREE_KEYS"                   : "ERROR: No more keys available for new playlist"
 }

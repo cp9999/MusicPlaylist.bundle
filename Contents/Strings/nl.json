@@ -7,8 +7,10 @@
   "MENU_ACTION_ADD_TRACKS"               : "Liedjes toevoegen aan afspeellijst",
   "MENU_ACTION_DELETE_PLAYLIST"          : "Afspeellijst verwijderen",
   "MENU_ACTION_REMOVE_TRACKS"            : "Liedjes uit afspeellijst verwijderen",
+  "MENU_ACTION_REMOVE_TRACK"             : "Liedje verwijderen",
   "MENU_ACTION_RENAME_PLAYLIST"          : "Afspeellijst hernoemen",
   "MENU_TITLE_TRACK_ACTIONS"             : "Toevoegen aan afspeellijst",
+  "MENU_TITLE_TRACK_REMOVE"              : "Verwijder liedjes uit %s",
   
   "MENU_CREATEPL_ENTER_TITLE"            : "Titel: %s",
   "MENU_CREATEPL_ENTER_DESCR"            : "Omschrijving: %s",
@@ -17,12 +19,21 @@
   "MENU_CREATEPL_ENTER_DESCR_PROMPT"     : "Omschrijving ingeven",
   "MENU_CREATEPL_SELECT_TYPE_PROMPT"     : "Kies type",
   "MENU_CREATEPL_CREATE_LIST"            : "Afspeellijst aanmaken met bovenstaande instellingen",
+  "MENU_RENAMEPL_PROMPT"                 : "Hernoem afspeellijst naar",
   
   "TITLE_ADD_TO_PLAYLIST"                : "Toevoegen aan afspeellijst [%s]",
+  "TITLE_CONFIRM_DELETE"                 : "Bevesig verwijderen",
+  "TITLE_DELETE_CANCELED"                : "Verwijderen geannuleerd",
+  "TITLE_CANCEL"                         : "Annuleren",
+  
   "MSG_EMPTY_PLAYLIST"                   : "Afspeellijst is leeg",
   "MSG_TRACK_ALREADY_IN_PLAYLIST"        : "Lied is al aanwezig in de afspeellijst: %s [key=%s]",
-  "MSG_TRACK_ADDED_TO_PLAYLIST"          : "Lied %s met key %s toegevoegd aan afspeellijst %s",
-  "MSG_PLAYLIST_CREATED"                 : "Afspeellijst met titel %s aangemaakt",
+  "MSG_TRACK_ADDED_TO_PLAYLIST"          : "Lied %s toegevoegd aan afspeellijst %s",
+  "MSG_TRACK_REMOVED_FROM_PLAYLIST"      : "Lied %s verwijderd uit afspeellijst",
+  "MSG_PLAYLIST_CREATED"                 : "Afspeellijst %s aangemaakt met sleutel %s",
+  "MSG_PLAYLIST_RENAMED"                 : "Afspeellijst hernoemd naar %s",
+  "MSG_PLAYLIST_DELETED"                 : "Afspeellijst verwijderd",
+  
   "ERROR_NO_METADATA"                    : "FOUT: Geen metadata gevonden voor lied met key %s ",
   "ERROR_NO_TRACK_FOUND"                 : "FOUT: Lied niet gevonden: %s key=%s]",
   "ERROR_NO_MEDIA_FOR_TRACK"             : "FOUT: Geen media gevonden voor lied %s [key=%s]",
@@ -30,5 +41,6 @@
   "ERROR_TRACK_NOT_ADDED"                : "FOUT: Lied niet toegevoegd aan afpeellijst",
   "ERROR_PLAYLIST_EXISTS"                : "FOUT: Er bestaat al een afspeellijst met sleutel %s",
   "ERROR_MISSING_TITLE"                  : "FOUT: Geen title opgegeven voor afspeellijst",
-  "ERROR_EMPTY_SEARCH_QUERY"             : "FOUT: Geen zoektekst opgegeven"
+  "ERROR_EMPTY_SEARCH_QUERY"             : "FOUT: Geen zoektekst opgegeven",
+  "ERROR_NO_FREE_KEYS"                   : "FOUT: Geen sleutels meer beschikbaar voor nieuwe afspeellijst"
 }

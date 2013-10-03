@@ -11,4 +11,16 @@
         "type": "text",
         "default": "32400"
     },
+    {
+        "id": "confirm_delete_playlist",
+        "label": "Confirm delete playlist",
+        "type": "bool",
+        "default": "True"
+    },
+    {
+        "id": "confirm_remove_track",
+        "label": "Confirm remove track",
+        "type": "bool",
+        "default": "True"
+    },
 ]

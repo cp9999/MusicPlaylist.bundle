@@ -4,6 +4,30 @@
 # Copied some code from: UnSupportedAppstore.bundle
 #
 
+#
+# TODO:
+#   Save global list of playlists in an Xml file (in stead of using Data.SaveObject(0))
+#   Playlist maintenance - Reposition tracks in the playlist
+#
+#   Some playlist funtionality ideas:
+#       = Shuffle mode (also store as setting in the playlist.xml)
+#           Static: e.g. Populate the track list in a random order when playlist is opened for playback
+#           Dynamic: e.g. Building an URL service for playing the playlist. The service would determine the next track to play
+#       = Support Smart playlists, like:
+#           a. specify and store one or more search queries in stead of tracks
+#           b. play "top <x>" rated songs of each/selected  album/artist
+#       = Sort of 'On Deck' functionality for running playlist
+#           Requires knowledge of what's happening in the player (e.g. like callbacks when song is done )
+#           or maybe replace the standard TrackObject for playing tracks with our own URL service for starting the songs
+#       = Add a metadata service (much like the standard PMS ones) to retrieve metadata for the playlists
+#
+#
+# QUESTIONS:
+#   1. How to correctly use different ViewGroups?
+#   2. How to differentiate for different users?
+#   3. How to set the correct album art per track in the list (is that even possible)?
+#
+
 import json
 import os
 from lxml import etree
@@ -21,6 +45,8 @@ ICON = 'icon-default.png'
 # Preferences
 PREFS__USERNAME = 'username'
 PREFS__PLEXPORT = 'plexport'
+PREFS__CONFIRM_DELETE_PL = 'confirm_delete_playlist'
+PREFS__CONFIRM_REMOVE_TR = 'confirm_remove_track'
 
 
 # XML Root
@@ -41,14 +67,20 @@ ATTR_CONTAINER = 'container'
 ATTR_VIEWGROUP = 'viewGroup'
 ATTR_SEARCH = 'search'
 ATTR_PROMPT = 'prompt'
+ATTR_PLTYPE = 'playlisttype'
+ATTR_DESCR = 'description'
 
-# Create new playlist
+# Create new playlist / maintenance
 NEW_PL_TITLE = 'title'
 NEW_PL_DESCRIPTION = 'description'
 NEW_PL_TYPE = 'playlist_type'
 PL_TYPE_SIMPLE = 'SIMPLE'
 PL_TYPE_SMART = 'SMART'
 PL_TYPES = [PL_TYPE_SIMPLE, PL_TYPE_SMART]
+PL_MODE_PLAY = 'play'
+PL_MODE_DELETE = 'delete'
+CANCEL_MODE_DELETE_PL = 'delete_playlist'
+CANCEL_MODE_REMOVE_TR = 'remove_track'
 
 # Resource stings
 TEXT_MAIN_TITLE = "MAIN_TITLE"
@@ -58,9 +90,11 @@ TEXT_MENU_ACTION_PLAYLIST_MAINTENANCE = "MENU_ACTION_PLAYLIST_MAINTENANCE"
 TEXT_MENU_ACTION_CREATE_PLAYLIST = "MENU_ACTION_CREATE_PLAYLIST"
 TEXT_MENU_ACTION_ADD_TRACKS = "MENU_ACTION_ADD_TRACKS"
 TEXT_MENU_ACTION_REMOVE_TRACKS = "MENU_ACTION_REMOVE_TRACKS"
+TEXT_MENU_ACTION_REMOVE_TRACK = "MENU_ACTION_REMOVE_TRACK"
 TEXT_MENU_ACTION_DELETE_PLAYLIST = "MENU_ACTION_DELETE_PLAYLIST"
 TEXT_MENU_ACTION_RENAME_PLAYLIST = "MENU_ACTION_RENAME_PLAYLIST"
 TEXT_MENU_TITLE_TRACK_ACTIONS = "MENU_TITLE_TRACK_ACTIONS"
+TEXT_MENU_TITLE_TRACK_REMOVE = "MENU_TITLE_TRACK_REMOVE"
 
 TEXT_MENU_CREATEPL_ENTER_TITLE = "MENU_CREATEPL_ENTER_TITLE"
 TEXT_MENU_CREATEPL_ENTER_DESCR = "MENU_CREATEPL_ENTER_DESCR"
@@ -69,12 +103,21 @@ TEXT_MENU_CREATEPL_ENTER_TITLE_PROMPT = "MENU_CREATEPL_ENTER_TITLE_PROMPT"
 TEXT_MENU_CREATEPL_ENTER_DESCR_PROMPT = "MENU_CREATEPL_ENTER_DESCR_PROMPT"
 TEXT_MENU_CREATEPL_SELECT_TYPE_PROMPT = "MENU_CREATEPL_SELECT_TYPE_PROMPT"
 TEXT_MENU_CREATEPL_CREATE_LIST = "MENU_CREATEPL_CREATE_LIST"
+TEXT_MENU_RENAMEPL_PROMPT = "MENU_RENAMEPL_PROMPT"
 
 TEXT_TITLE_ADD_TO_PLAYLIST = "TITLE_ADD_TO_PLAYLIST"
+TEXT_TITLE_CONFIRM_DELETE = "TITLE_CONFIRM_DELETE"
+TEXT_TITLE_DELETE_CANCELED = "TITLE_DELETE_CANCELED"
+TEXT_TITLE_CANCEL = "TITLE_CANCEL"
+
 TEXT_MSG_EMPTY_PLAYLIST = "MSG_EMPTY_PLAYLIST"
 TEXT_MSG_TRACK_ALREADY_IN_PLAYLIST = "MSG_TRACK_ALREADY_IN_PLAYLIST"
 TEXT_MSG_TRACK_ADDED_TO_PLAYLIST = "MSG_TRACK_ADDED_TO_PLAYLIST"
+TEXT_MSG_TRACK_REMOVED_FROM_PLAYLIST = "MSG_TRACK_REMOVED_FROM_PLAYLIST"
 TEXT_MSG_PLAYLIST_CREATED = "MSG_PLAYLIST_CREATED"
+TEXT_MSG_PLAYLIST_RENAMED = "MSG_PLAYLIST_RENAMED"
+TEXT_MSG_PLAYLIST_DELETED = "MSG_PLAYLIST_DELETED"
+
 TEXT_ERROR_NO_METADATA = "ERROR_NO_METADATA"
 TEXT_ERROR_NO_TRACK_FOUND = "ERROR_NO_TRACK_FOUND"
 TEXT_ERROR_NO_MEDIA_FOR_TRACK = "ERROR_NO_MEDIA_FOR_TRACK"
@@ -82,7 +125,8 @@ TEXT_ERROR_NO_TRACK_DATA = "ERROR_NO_TRACK_DATA"
 TEXT_ERROR_TRACK_NOT_ADDED = "ERROR_TRACK_NOT_ADDED"
 TEXT_ERROR_PLAYLIST_EXISTS = "ERROR_PLAYLIST_EXISTS"
 TEXT_ERROR_MISSING_TITLE = "ERROR_MISSING_TITLE"
-TEXT_ERROR_EMPTY_SEARCH_QUERY = "ERROR_EMPTY_SEARCH_QUERY" 
+TEXT_ERROR_EMPTY_SEARCH_QUERY = "ERROR_EMPTY_SEARCH_QUERY"
+TEXT_ERROR_NO_FREE_KEYS = "ERROR_NO_FREE_KEYS"
 
 ####################################################################################################
 def Start():
@@ -118,13 +162,12 @@ def LoadGlobalData():
   
 ####################################################################################################
 #@handler(PREFIX, NAME)
-def MainMenu():
-    
+def MainMenu():   
     oc = ObjectContainer(no_cache = True)
 
     for playlistkey in allPlaylists.keys():
         listtitle = allPlaylists[playlistkey]
-        oc.add(DirectoryObject(key = Callback(PlaylistMenu, title = listtitle, key = playlistkey), title = listtitle))
+        oc.add(DirectoryObject(key = Callback(PlaylistMenu, title = listtitle, key = playlistkey, mode = PL_MODE_PLAY), title = listtitle))
       
     oc.add(DirectoryObject(key = Callback(MaintenanceMenu, title = L(TEXT_MENU_ACTION_PLAYLIST_MAINTENANCE)), title = L(TEXT_MENU_ACTION_PLAYLIST_MAINTENANCE)))  
 
@@ -138,16 +181,22 @@ def MainMenu():
 ####################################################################################################
 
 @route(PREFIX +'/playlistmenu')
-def PlaylistMenu(title, key):
+def PlaylistMenu(title, key, mode):
     # todo
-    oc = ObjectContainer(title2 = title, view_group='List', art = R('icon-default.png'), content = ContainerContent.Tracks, no_cache = True)    
+    oc = ObjectContainer(title2 = title, view_group='List', art = R('icon-default.png'), no_cache = True)
+    if mode == PL_MODE_PLAY:
+        oc.content = ContainerContent.Tracks
+    
     # load the playlist
     # This is an: etree.Element XML Element 
     playlist = LoadSinglePlaylist(key)
     if playlist != None:
         tracks = playlist.xpath('//Track')
         for track in tracks:
-            oc.add(createTrackObject(track))
+            if mode == PL_MODE_PLAY:
+                oc.add(createTrackObject(track))
+            elif mode == PL_MODE_DELETE:
+                oc.add(createRemoveTrackObject(track = track, playlistkey = key))
         return oc
                     
     return showMessage(message_text = L(TEXT_MSG_EMPTY_PLAYLIST) )
@@ -185,11 +234,14 @@ def MaintenanceMenu(title):
     oc = ObjectContainer(title2 = title, view_group='List')
     newsetting = { NEW_PL_TITLE : 'New playlist', NEW_PL_TYPE : PL_TYPE_SIMPLE, NEW_PL_DESCRIPTION : ''}
     Log.Debug(newsetting[NEW_PL_TITLE])
-    oc.add(DirectoryObject(key = Callback(BrowseMusicMenu, title = L(TEXT_MENU_ACTION_ADD_TRACKS)), title = L(TEXT_MENU_ACTION_ADD_TRACKS)))  
-    oc.add(DirectoryObject(key = Callback(RemoveTracksMenu, title = L(TEXT_MENU_ACTION_REMOVE_TRACKS)), title = L(TEXT_MENU_ACTION_REMOVE_TRACKS)))  
-    oc.add(DirectoryObject(key = Callback(RenamePlaylistMenu, title = L(TEXT_MENU_ACTION_RENAME_PLAYLIST)), title = L(TEXT_MENU_ACTION_RENAME_PLAYLIST)))
+    playlists_present = (allPlaylists != None and len(allPlaylists) > 0)
+    if playlists_present:
+        oc.add(DirectoryObject(key = Callback(BrowseMusicMenu, title = L(TEXT_MENU_ACTION_ADD_TRACKS)), title = L(TEXT_MENU_ACTION_ADD_TRACKS)))  
+        oc.add(DirectoryObject(key = Callback(RemoveTracksMenu, title = L(TEXT_MENU_ACTION_REMOVE_TRACKS)), title = L(TEXT_MENU_ACTION_REMOVE_TRACKS)))  
+        oc.add(DirectoryObject(key = Callback(RenamePlaylistMenu, title = L(TEXT_MENU_ACTION_RENAME_PLAYLIST)), title = L(TEXT_MENU_ACTION_RENAME_PLAYLIST)))
     oc.add(DirectoryObject(key = Callback(CreatePlaylistMenu, settings = newsetting), title = L(TEXT_MENU_ACTION_CREATE_PLAYLIST)))  
-    oc.add(DirectoryObject(key = Callback(DeletePlaylistMenu, title = L(TEXT_MENU_ACTION_DELETE_PLAYLIST)), title = L(TEXT_MENU_ACTION_DELETE_PLAYLIST)))
+    if playlists_present:
+        oc.add(DirectoryObject(key = Callback(DeletePlaylistMenu, title = L(TEXT_MENU_ACTION_DELETE_PLAYLIST)), title = L(TEXT_MENU_ACTION_DELETE_PLAYLIST)))
     
     return oc
 
@@ -208,10 +260,12 @@ def CreatePlaylistMenu(settings):
                            title = L(TEXT_MENU_CREATEPL_CREATE_LIST)))  
     return oc
 
+
 @route(PREFIX +'/setplaylistoption', settings=dict)
 def CreatePLSetOption(query, itype, settings):
     settings[itype] = query
     return CreatePlaylistMenu(settings)
+
 
 @route(PREFIX +'/selectplaylisttype', settings=dict)
 def CreatePLSelectTypeMenu(settings):
@@ -221,6 +275,7 @@ def CreatePLSelectTypeMenu(settings):
         oc.add(DirectoryObject(key = Callback(CreatePLSetOption, query = playlist_type, itype = NEW_PL_TYPE, settings = settings),
                                title = playlist_type))         
     return oc
+
 
 @route(PREFIX +'/createplaylist', settings=dict)
 def CreatePLCreatePlaylist(settings):
@@ -232,15 +287,115 @@ def CreatePLCreatePlaylist(settings):
 
 @route(PREFIX +'/removetracks')
 def RemoveTracksMenu(title):
-    return showMessage(message_text = 'TODO: Remove tracks from playlist')
+    oc = ObjectContainer(title2 = title, no_cache = True, no_history = True)
+
+    for playlistkey in allPlaylists.keys():
+        listtitle = allPlaylists[playlistkey]
+        oc.add(DirectoryObject(key = Callback(PlaylistMenu,
+                                              title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_REMOVE, listtitle),
+                                              key = playlistkey,
+                                              mode = PL_MODE_DELETE),
+                               title = listtitle))      
+    return oc
+
+
+def createRemoveTrackObject(track, playlistkey):
+    title = track.get(ATTR_TITLE)
+    key = track.get(ATTR_KEY)
+    if Prefs[PREFS__CONFIRM_REMOVE_TR] == True:
+        return PopupDirectoryObject(key = Callback(ConfirmRemoveTrackMenu, playlistkey = playlistkey, key = key, tracktitle = title),
+                                    title = title)
+        
+    return DirectoryObject(key = Callback(removeFromPlaylist, playlistkey = playlistkey, key = key, tracktitle = title),
+                           title = title)
+
+
+@route(PREFIX +'/confirmremovetrack')
+def ConfirmRemoveTrackMenu(playlistkey, key, tracktitle):
+    oc = ObjectContainer(title1 = L(TEXT_TITLE_CONFIRM_DELETE), no_cache = True, no_history = True)
+
+    oc.add(DirectoryObject(key = Callback(removeFromPlaylist, playlistkey = playlistkey, key = key, tracktitle = tracktitle),
+                           title = L(TEXT_MENU_ACTION_REMOVE_TRACK)))
+    cancelParams = {'playlistkey' : playlistkey}
+    oc.add(DirectoryObject(key = Callback(CancelAction, title = L(TEXT_TITLE_DELETE_CANCELED), mode = CANCEL_MODE_REMOVE_TR, params = cancelParams),
+                           title = L(TEXT_TITLE_CANCEL)))      
+    return oc
+
                        
 @route(PREFIX +'/renameplaylist')
 def RenamePlaylistMenu(title):
-    return showMessage(message_text = 'TODO: Rename playlist')
+    oc = ObjectContainer(title2 = title, no_cache = True, no_history = True)
+
+    for playlistkey in allPlaylists.keys():
+        listtitle = allPlaylists[playlistkey]
+        oc.add(InputDirectoryObject(key = Callback(RenamePlaylist, playlistkey = playlistkey),
+                                    title = listtitle,
+                                    prompt = L(TEXT_MENU_RENAMEPL_PROMPT)))      
+    return oc
+
+
+@route(PREFIX +'/dorenameplaylist')
+def RenamePlaylist(query, playlistkey):
+    if query != None and len(query) > 0:
+        # change title in main list
+        allPlaylists[playlistkey] = query
+        Data.SaveObject(getPlaylistName(), allPlaylists)
+        
+        # Update the playlist.xml file
+        playlist = LoadSinglePlaylist(playlistkey)
+        if playlist != None:
+            playlist.set(ATTR_TITLE, query)
+            SaveSinglePlaylist(playlistkey, playlist)
+                        
+    return showMessage(Locale.LocalStringWithFormat(TEXT_MSG_PLAYLIST_RENAMED, query))
+
 
 @route(PREFIX +'/deleteplaylist')
 def DeletePlaylistMenu(title):
-    return showMessage(message_text = 'TODO: Delete playlist')
+    oc = ObjectContainer(title2 = title, no_cache = True, no_history = True)
+
+    confirmDelete = Prefs[PREFS__CONFIRM_DELETE_PL] == True
+    for playlistkey in allPlaylists.keys():
+        listtitle = allPlaylists[playlistkey]
+        if confirmDelete:
+            oc.add(PopupDirectoryObject(key = Callback(ConfirmDeletePlaylistMenu, playlistkey = playlistkey),
+                                        title = listtitle))
+        else:
+            oc.add(DirectoryObject(key = Callback(DeletePlaylist, playlistkey = playlistkey), title = listtitle))      
+    return oc
+
+
+@route(PREFIX +'/confirmdeleteplaylist')
+def ConfirmDeletePlaylistMenu(playlistkey):
+    oc = ObjectContainer(title1 = L(TEXT_TITLE_CONFIRM_DELETE), no_cache = True, no_history = True)
+
+    oc.add(DirectoryObject(key = Callback(DeletePlaylist, playlistkey = playlistkey), title = L(TEXT_MENU_ACTION_DELETE_PLAYLIST)))      
+    oc.add(DirectoryObject(key = Callback(CancelAction, title = L(TEXT_TITLE_DELETE_CANCELED), mode = CANCEL_MODE_DELETE_PL),
+                           title = L(TEXT_TITLE_CANCEL)))      
+    return oc
+    
+
+@route(PREFIX +'/cancelaction', params=dict)
+def CancelAction(title, mode, params = {}):
+    if mode == CANCEL_MODE_DELETE_PL:
+        return DeletePlaylistMenu(title = L(TEXT_MENU_ACTION_DELETE_PLAYLIST))
+    elif mode == CANCEL_MODE_REMOVE_TR:
+        if params != None and 'playlistkey' in params.keys():
+            playlistkey = params['playlistkey']
+            return PlaylistMenu(title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_REMOVE, allPlaylists[playlistkey]),
+                                key = playlistkey,
+                                mode = PL_MODE_DELETE)
+    return showMessage(title)
+
+@route(PREFIX +'/dodeleteplaylist')
+def DeletePlaylist(playlistkey):
+    if playlistkey != None and playlistkey in allPlaylists.keys():
+        # Delete the playlist file
+        DeleteSinglePlaylist(playlistkey)
+        # Remove the playlist from the list
+        del allPlaylists[playlistkey]
+        Data.SaveObject(getPlaylistName(), allPlaylists)
+    return showMessage(L(TEXT_MSG_PLAYLIST_DELETED))
 
 ####################################################################################################
 # Browse music sections
@@ -295,6 +450,7 @@ def BrowseSectionMenu(parentUrl, title, section, append_trailing_slash = True):
   
     return oc     
 
+@route(PREFIX +'/search')
 def SearchMenu(query, key, title):
     if query != None and len(query) > 0:
         return BrowseSectionMenu(parentUrl = pms_main_url,
@@ -302,6 +458,7 @@ def SearchMenu(query, key, title):
                                  section = '/%s&query=%s' % (key, query),
                                  append_trailing_slash = False)
     return showMessage(L(TEXT_ERROR_EMPTY_SEARCH_QUERY))
+
 
 @route(PREFIX +'/browsetrack')
 def BrowseTrackPopupMenu(key, tracktitle):
@@ -316,8 +473,7 @@ def BrowseTrackPopupMenu(key, tracktitle):
 
 
 @route(PREFIX +'/addtoplaylist')
-def addToPlaylist(playlistkey, key, tracktitle):
-   
+def addToPlaylist(playlistkey, key, tracktitle):   
     # use key to get the track information
     trackUrl = pms_main_url + key + '/'
     el = XML.ElementFromURL(trackUrl)
@@ -356,9 +512,24 @@ def addToPlaylist(playlistkey, key, tracktitle):
         # additional atributes for PartObject
         elNewtrack.set(ATTR_PARTKEY, pms_main_url + part.get(ATTR_KEY))
         SaveSinglePlaylist(playlistkey, playlist)
-        return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_MSG_TRACK_ADDED_TO_PLAYLIST, track, key, playlistkey))
+        return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_MSG_TRACK_ADDED_TO_PLAYLIST, tracktitle, allPlaylists[playlistkey]))
             
     return showMessage(message_text = L(TEXT_ERROR_TRACK_NOT_ADDED))
+
+
+@route(PREFIX +'/removefromplaylist')
+def removeFromPlaylist(playlistkey, key, tracktitle):
+    Log.Debug('removing track from  playlist')
+    playlist = LoadSinglePlaylist(playlistkey)
+    if playlist != None:
+        tracks = playlist.xpath('//Track[@key="%s"]' % key)
+        for track in tracks:
+            playlist.remove(track)
+
+        SaveSinglePlaylist(playlistkey, playlist)
+        return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_MSG_TRACK_REMOVED_FROM_PLAYLIST, tracktitle))
+            
+    pass
 
 
 ####################################################################################################
@@ -379,16 +550,26 @@ def loadPlaylists():
 @route(PREFIX +'/addplaylist', settings=dict)
 def addPlaylist(settings):
     global allPlaylists
-    # Generate a new key!
+    
     if allPlaylists == None:
         allPlaylists = {}
-    playlistKey = settings[NEW_PL_TITLE]
+
+    # Generate a new key!
+    playlistKey = getNextPlaylistKey()
+    if playlistKey == None:
+        return showMessage(TEXT_ERROR_NO_FREE_KEYS)
+    
+    # This should not be possible anymore!
     if playlistKey in allPlaylists.keys():
         return showMessage(Locale.LocalStringWithFormat(TEXT_ERROR_PLAYLIST_EXISTS, playlistKey))
+    
     # For now, just set the title. Tobe changed to store the settings object in the allPlaylists dict
-    allPlaylists[playlistKey] = playlistKey
+    allPlaylists[playlistKey] = settings[NEW_PL_TITLE]
     Data.SaveObject(getPlaylistName(), allPlaylists)
-    return showMessage(Locale.LocalStringWithFormat(TEXT_MSG_PLAYLIST_CREATED, playlistKey))
+    
+    # Also create the playlist.xml file
+    CreateSinglePlaylist(playlistkey = playlistKey, settings = settings)
+    return showMessage(Locale.LocalStringWithFormat(TEXT_MSG_PLAYLIST_CREATED, allPlaylists[playlistKey], playlistKey))
 
 @route(PREFIX +'/getplaylistname')
 def getPlaylistName():
@@ -406,7 +587,8 @@ def LoadSinglePlaylist(playlistkey):
             return root
         except:            
             return None
-    return CreateSinglePlaylist(playlistkey)
+    newsettings = { NEW_PL_TITLE : allPlaylists[playlistkey], NEW_PL_TYPE : PL_TYPE_SIMPLE, NEW_PL_DESCRIPTION : ''}
+    return CreateSinglePlaylist(playlistkey = playlistkey, settings = newsettings)
 
 def SaveSinglePlaylist(playlistkey, playlist):
     full_filename = GetPlaylistFileName(playlistkey)
@@ -419,18 +601,45 @@ def SaveSinglePlaylist(playlistkey, playlist):
             pass
     pass    
     
-def CreateSinglePlaylist(playlistkey):    
+@route(PREFIX +'/createsingleplaylist', settings=dict)
+def CreateSinglePlaylist(playlistkey, settings = {}):    
     newplaylist = etree.Element(PLAYLIST_ROOT)
     if newplaylist != None:
-        etree.SubElement(newplaylist, ATTR_KEY).text = playlistkey
-        etree.SubElement(newplaylist, ATTR_TITLE).text = allPlaylists[playlistkey]
+        newplaylist.set(ATTR_KEY, playlistkey)
+        newplaylist.set(ATTR_TITLE, settings[NEW_PL_TITLE])
+        newplaylist.set(ATTR_PLTYPE, settings[NEW_PL_TYPE])
+        newplaylist.set(ATTR_DESCR, settings[NEW_PL_DESCRIPTION])
         SaveSinglePlaylist(playlistkey, newplaylist)        
     return newplaylist;
+
+
+def DeleteSinglePlaylist(playlistkey):   
+    full_filename = GetPlaylistFileName(playlistkey)
+    Log.Debug('DeleteSinglePlaylist: %s' % full_filename)
+    if os.path.isfile(full_filename):
+        try:
+            os.remove(full_filename)
+        except:
+            pass
+    pass
 
 
 ####################################################################################################
 # Generic helper functions
 ####################################################################################################
+
+def getNextPlaylistKey():
+    if allPlaylists != None:
+        nextKey = 1
+        while nextKey <= 9999:
+            if keyString(key_number = nextKey) in allPlaylists.keys():
+                nextKey += 1
+            else:
+                return keyString(key_number = nextKey)
+    return None
+
+def keyString(key_number):
+    return '%04d' % key_number
 
 def setAttributeIfPresent(to_elem, from_elem, attr_name):
     if to_elem != None and from_elem != None and attr_name != None and from_elem.get(attr_name) != None:
