@@ -1,9 +1,15 @@
 [
     {
         "id": "username",
-        "label": "User name",
+        "label": "User name", 
         "type": "text",
         "default": "me"
+    },
+    {
+        "id": "plexip",
+        "label": "Plex IP",
+        "type": "text",
+        "default": "192.168.0.1"
     },
     {
         "id": "plexport",

@@ -3,11 +3,17 @@
 # Credits:
 # Copied some code from: UnSupportedAppstore.bundle
 #
-
+#
+# NOTES:
+#   1. Info.plist:  <PlexPluginCodePolicy> currently set to "Elevated"
+#      ==> This plugin queries the metadata from the PMS server.
+#          This gives a permission denied unless the security is set to "Elevated"
 #
 # TODO:
-#   Save global list of playlists in an Xml file (in stead of using Data.SaveObject(0))
-#   Playlist maintenance - Reposition tracks in the playlist
+#   1. Save global list of playlists in an Xml file (in stead of using Data.SaveObject(0))
+#   2. Playlist maintenance - Reposition tracks in the playlist :  .....In Progress
+#   3. Cannot use PopupDirectoryObject when editing playlist in 'ASK_PER_TRACK' mode
+#      This is because the InputDirectoryObject does not work when used from a PopupDirectoryObject entry
 #
 #   Some playlist funtionality ideas:
 #       = Shuffle mode (also store as setting in the playlist.xml)
@@ -27,6 +33,7 @@
 #   2. How to differentiate for different users?
 #   3. How to set the correct album art per track in the list (is that even possible)?
 #
+#
 
 import json
 import os
@@ -37,13 +44,13 @@ from lxml import etree
 NAME = 'Playlists'
 PREFIX = '/music/playlists'
 PLUGIN_DIR = 'com.plexapp.plugins.playlist'
-PMS_URL_PLEX = 'http://192.168.10.20:32400'
 LIBRARY_SECTIONS = '/library/sections/'
 ART = 'art-default.png'
 ICON = 'icon-default.png'
 
 # Preferences
 PREFS__USERNAME = 'username'
+PREFS__PLEXIP = 'plexip'
 PREFS__PLEXPORT = 'plexport'
 PREFS__CONFIRM_DELETE_PL = 'confirm_delete_playlist'
 PREFS__CONFIRM_REMOVE_TR = 'confirm_remove_track'
@@ -79,8 +86,12 @@ PL_TYPE_SMART = 'SMART'
 PL_TYPES = [PL_TYPE_SIMPLE, PL_TYPE_SMART]
 PL_MODE_PLAY = 'play'
 PL_MODE_DELETE = 'delete'
+PL_MODE_MOVE = 'move'
+PL_MODE_ASK = 'maintain'
 CANCEL_MODE_DELETE_PL = 'delete_playlist'
 CANCEL_MODE_REMOVE_TR = 'remove_track'
+CANCEL_MODE_EDIT_PLAYLIST = 'edit_playlist'
+CANCEL_MODE_ASK_ACTION = 'ask_action'
 
 # Resource stings
 TEXT_MAIN_TITLE = "MAIN_TITLE"
@@ -91,10 +102,19 @@ TEXT_MENU_ACTION_CREATE_PLAYLIST = "MENU_ACTION_CREATE_PLAYLIST"
 TEXT_MENU_ACTION_ADD_TRACKS = "MENU_ACTION_ADD_TRACKS"
 TEXT_MENU_ACTION_REMOVE_TRACKS = "MENU_ACTION_REMOVE_TRACKS"
 TEXT_MENU_ACTION_REMOVE_TRACK = "MENU_ACTION_REMOVE_TRACK"
+TEXT_MENU_ACTION_MOVE_TRACK = "MENU_ACTION_MOVE_TRACK"
 TEXT_MENU_ACTION_DELETE_PLAYLIST = "MENU_ACTION_DELETE_PLAYLIST"
+TEXT_MENU_ACTION_EDIT_PLAYLIST = "MENU_ACTION_EDIT_PLAYLIST"
 TEXT_MENU_ACTION_RENAME_PLAYLIST = "MENU_ACTION_RENAME_PLAYLIST"
 TEXT_MENU_TITLE_TRACK_ACTIONS = "MENU_TITLE_TRACK_ACTIONS"
 TEXT_MENU_TITLE_TRACK_REMOVE = "MENU_TITLE_TRACK_REMOVE"
+TEXT_MENU_TITLE_TRACK_MOVE = "MENU_TITLE_TRACK_MOVE"
+TEXT_MENU_TITLE_TRACK_ASK = "MENU_TITLE_TRACK_ASK"
+TEXT_MENU_TITLE_EDIT_ASK = "MENU_TITLE_EDIT_ASK"
+TEXT_MENU_ACTION_EDIT_MODE_REMOVE = "MENU_ACTION_EDIT_MODE_REMOVE"
+TEXT_MENU_ACTION_EDIT_MODE_MOVE = "MENU_ACTION_EDIT_MODE_MOVE"
+TEXT_MENU_ACTION_EDIT_MODE_ASK = "MENU_ACTION_EDIT_MODE_ASK"
+TEXT_MENU_EDITPL_MOVE_PROMPT = "MENU_EDITPL_MOVE_PROMPT"
 
 TEXT_MENU_CREATEPL_ENTER_TITLE = "MENU_CREATEPL_ENTER_TITLE"
 TEXT_MENU_CREATEPL_ENTER_DESCR = "MENU_CREATEPL_ENTER_DESCR"
@@ -108,7 +128,9 @@ TEXT_MENU_RENAMEPL_PROMPT = "MENU_RENAMEPL_PROMPT"
 TEXT_TITLE_ADD_TO_PLAYLIST = "TITLE_ADD_TO_PLAYLIST"
 TEXT_TITLE_CONFIRM_DELETE = "TITLE_CONFIRM_DELETE"
 TEXT_TITLE_DELETE_CANCELED = "TITLE_DELETE_CANCELED"
+TEXT_TITLE_ACTION_CANCELED = "TITLE_ACTION_CANCELED"
 TEXT_TITLE_CANCEL = "TITLE_CANCEL"
+TEXT_TITLE_SELECT_EDITMODE = "TITLE_SELECT_EDITMODE"
 
 TEXT_MSG_EMPTY_PLAYLIST = "MSG_EMPTY_PLAYLIST"
 TEXT_MSG_TRACK_ALREADY_IN_PLAYLIST = "MSG_TRACK_ALREADY_IN_PLAYLIST"
@@ -153,9 +175,12 @@ def LoadGlobalData():
     global allPlaylists
     global pms_main_url
     
-    pms_main_url = 'http://%s:%s' %(Network.Address, Prefs[PREFS__PLEXPORT])
-    # For now: always use the main server URL
-    #pms_main_url = PMS_URL_PLEX
+    # TODO: Get the correct full IP addres (not the localhost one)
+    #       Cannot figure out how to retrieve the full IP address for the PMS server
+    # Network.Address returns the 127.0.0.1 address. Playback using this IP address seems to not work
+    #  (at least not for the windows Plex client). Using the full IP address (e.g. 192.xxx.xxx.xxx) does work
+    # Using IP address from preferences for now.
+    pms_main_url = 'http://%s:%s' %(Prefs[PREFS__PLEXIP], Prefs[PREFS__PLEXPORT])
     
     allPlaylists = loadPlaylists()   
     pass
@@ -167,7 +192,8 @@ def MainMenu():
 
     for playlistkey in allPlaylists.keys():
         listtitle = allPlaylists[playlistkey]
-        oc.add(DirectoryObject(key = Callback(PlaylistMenu, title = listtitle, key = playlistkey, mode = PL_MODE_PLAY), title = listtitle))
+        oc.add(DirectoryObject(key = Callback(PlaylistMenu, title = listtitle, key = playlistkey, mode = PL_MODE_PLAY, replace_parent = False),
+                               title = listtitle))
       
     oc.add(DirectoryObject(key = Callback(MaintenanceMenu, title = L(TEXT_MENU_ACTION_PLAYLIST_MAINTENANCE)), title = L(TEXT_MENU_ACTION_PLAYLIST_MAINTENANCE)))  
 
@@ -181,9 +207,10 @@ def MainMenu():
 ####################################################################################################
 
 @route(PREFIX +'/playlistmenu')
-def PlaylistMenu(title, key, mode):
+def PlaylistMenu(title, key, mode, replace_parent = True):
     # todo
-    oc = ObjectContainer(title2 = title, view_group='List', art = R('icon-default.png'), no_cache = True)
+    oc = ObjectContainer(title2 = title, view_group='List', art = R('icon-default.png'), no_cache = True, replace_parent = replace_parent)
+        
     if mode == PL_MODE_PLAY:
         oc.content = ContainerContent.Tracks
     
@@ -191,19 +218,21 @@ def PlaylistMenu(title, key, mode):
     # This is an: etree.Element XML Element 
     playlist = LoadSinglePlaylist(key)
     if playlist != None:
+        track_nr = 0
         tracks = playlist.xpath('//Track')
         for track in tracks:
+            track_nr += 1
             if mode == PL_MODE_PLAY:
-                oc.add(createTrackObject(track))
-            elif mode == PL_MODE_DELETE:
-                oc.add(createRemoveTrackObject(track = track, playlistkey = key))
+                oc.add(createTrackObject(track = track, index = track_nr))
+            else:
+                oc.add(createMaintainTrackObject(track = track, index = track_nr, playlistkey = key, mode = mode))
         return oc
                     
     return showMessage(message_text = L(TEXT_MSG_EMPTY_PLAYLIST) )
 
 
-def createTrackObject(track):
-    title = track.get(ATTR_TITLE)
+def createTrackObject(track, index):
+    title = trackTitle(title = track.get(ATTR_TITLE), index = index)
     key = track.get(ATTR_KEY)
     ratingKey = track.get(ATTR_RATINGKEY)            
     trackObject = TrackObject(title = title, key = pms_main_url + key, rating_key = ratingKey)
@@ -237,7 +266,7 @@ def MaintenanceMenu(title):
     playlists_present = (allPlaylists != None and len(allPlaylists) > 0)
     if playlists_present:
         oc.add(DirectoryObject(key = Callback(BrowseMusicMenu, title = L(TEXT_MENU_ACTION_ADD_TRACKS)), title = L(TEXT_MENU_ACTION_ADD_TRACKS)))  
-        oc.add(DirectoryObject(key = Callback(RemoveTracksMenu, title = L(TEXT_MENU_ACTION_REMOVE_TRACKS)), title = L(TEXT_MENU_ACTION_REMOVE_TRACKS)))  
+        oc.add(DirectoryObject(key = Callback(MaintainTracksMenu, title = L(TEXT_MENU_ACTION_EDIT_PLAYLIST)), title = L(TEXT_MENU_ACTION_EDIT_PLAYLIST)))  
         oc.add(DirectoryObject(key = Callback(RenamePlaylistMenu, title = L(TEXT_MENU_ACTION_RENAME_PLAYLIST)), title = L(TEXT_MENU_ACTION_RENAME_PLAYLIST)))
     oc.add(DirectoryObject(key = Callback(CreatePlaylistMenu, settings = newsetting), title = L(TEXT_MENU_ACTION_CREATE_PLAYLIST)))  
     if playlists_present:
@@ -285,30 +314,67 @@ def CreatePLCreatePlaylist(settings):
     return showMessage(L(TEXT_ERROR_MISSING_TITLE))
 
 
+@route(PREFIX +'/maintaintrack')
+def SelectModeTrackMenu(playlistkey, listtitle):
+    oc = ObjectContainer(title1 = L(TEXT_TITLE_SELECT_EDITMODE), no_cache = True, no_history = True)
+
+    oc.add(DirectoryObject(key = Callback(PlaylistMenu,
+                                          title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_REMOVE, listtitle),
+                                          key = playlistkey,
+                                          mode = PL_MODE_DELETE,
+                                          replace_parent = False),
+                           title = L(TEXT_MENU_ACTION_EDIT_MODE_REMOVE)))      
+
+    oc.add(DirectoryObject(key = Callback(PlaylistMenu,
+                                          title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_MOVE, listtitle),
+                                          key = playlistkey,
+                                          mode = PL_MODE_MOVE,
+                                          replace_parent = False),
+                           title = L(TEXT_MENU_ACTION_EDIT_MODE_MOVE)))      
+
+    oc.add(DirectoryObject(key = Callback(PlaylistMenu,
+                                          title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_ASK, listtitle),
+                                          key = playlistkey,
+                                          mode = PL_MODE_ASK,
+                                          replace_parent = False),
+                           title = L(TEXT_MENU_ACTION_EDIT_MODE_ASK)))
+    
+    oc.add(DirectoryObject(key = Callback(CancelAction, title = '', mode = CANCEL_MODE_EDIT_PLAYLIST),
+                           title = L(TEXT_TITLE_CANCEL)))      
+    return oc
+
+
 @route(PREFIX +'/removetracks')
-def RemoveTracksMenu(title):
+def MaintainTracksMenu(title):
     oc = ObjectContainer(title2 = title, no_cache = True, no_history = True)
 
     for playlistkey in allPlaylists.keys():
         listtitle = allPlaylists[playlistkey]
-        oc.add(DirectoryObject(key = Callback(PlaylistMenu,
-                                              title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_REMOVE, listtitle),
-                                              key = playlistkey,
-                                              mode = PL_MODE_DELETE),
-                               title = listtitle))      
+        oc.add(PopupDirectoryObject(key = Callback(SelectModeTrackMenu, playlistkey = playlistkey, listtitle = listtitle),
+                                    title = listtitle))
     return oc
 
 
-def createRemoveTrackObject(track, playlistkey):
-    title = track.get(ATTR_TITLE)
-    key = track.get(ATTR_KEY)
-    if Prefs[PREFS__CONFIRM_REMOVE_TR] == True:
-        return PopupDirectoryObject(key = Callback(ConfirmRemoveTrackMenu, playlistkey = playlistkey, key = key, tracktitle = title),
-                                    title = title)
+def createMaintainTrackObject(track, index, playlistkey, mode):
+    title = trackTitle(title = track.get(ATTR_TITLE), index = index)
+    key = track.get(ATTR_KEY)    
+    Log.Debug("MODE = %s" % mode)
+    if mode == PL_MODE_DELETE:
+        # Delete tracks from list
+        if Prefs[PREFS__CONFIRM_REMOVE_TR] == True:
+            return PopupDirectoryObject(key = Callback(ConfirmRemoveTrackMenu, playlistkey = playlistkey, key = key, tracktitle = title),
+                                        title = title)
         
-    return DirectoryObject(key = Callback(removeFromPlaylist, playlistkey = playlistkey, key = key, tracktitle = title),
-                           title = title)
-
+        return DirectoryObject(key = Callback(removeFromPlaylist, playlistkey = playlistkey, key = key, tracktitle = title),
+                               title = title)
+    elif mode == PL_MODE_MOVE:
+        return InputDirectoryObject(key = Callback(moveTrack, playlistkey = playlistkey, trackkey = key, tracktitle = title),
+                                    title = title,
+                                    prompt = L(TEXT_MENU_EDITPL_MOVE_PROMPT))
+    elif mode == PL_MODE_ASK:
+        return PopupDirectoryObject(key = Callback(AskActionTrackMenu, playlistkey = playlistkey, key = key, tracktitle = title),
+                                    title = title)
+    # Should not happen !
 
 @route(PREFIX +'/confirmremovetrack')
 def ConfirmRemoveTrackMenu(playlistkey, key, tracktitle):
@@ -320,6 +386,33 @@ def ConfirmRemoveTrackMenu(playlistkey, key, tracktitle):
     oc.add(DirectoryObject(key = Callback(CancelAction, title = L(TEXT_TITLE_DELETE_CANCELED), mode = CANCEL_MODE_REMOVE_TR, params = cancelParams),
                            title = L(TEXT_TITLE_CANCEL)))      
     return oc
+
+
+@route(PREFIX +'/askactiontrack')
+def AskActionTrackMenu(playlistkey, key, tracktitle):
+    oc = ObjectContainer(title1 = L(TEXT_MENU_TITLE_EDIT_ASK), no_cache = True, no_history = True)
+
+    oc.add(DirectoryObject(key = Callback(removeFromPlaylist, playlistkey = playlistkey, key = key, tracktitle = tracktitle),
+                           title = L(TEXT_MENU_ACTION_REMOVE_TRACK)))
+
+    oc.add(InputDirectoryObject(key = Callback(moveTrack, playlistkey = playlistkey, trackkey = key, tracktitle = tracktitle),
+                                title = L(TEXT_MENU_ACTION_MOVE_TRACK),
+                                prompt = L(TEXT_MENU_EDITPL_MOVE_PROMPT)))    
+    
+    cancelParams = {'playlistkey' : playlistkey}
+    oc.add(DirectoryObject(key = Callback(CancelAction, title = L(TEXT_TITLE_DELETE_CANCELED), mode = CANCEL_MODE_ASK_ACTION, params = cancelParams),
+                           title = L(TEXT_TITLE_CANCEL)))      
+    return oc
+
+
+@route(PREFIX +'/dorenameplaylist')
+def moveTrack(query, playlistkey, trackkey, tracktitle):
+    if query != None and len(query) > 0:
+        # the query must be a valid integer !
+        # TODO: Move the track
+        pass
+                        
+    return showMessage('TODO: Move track to position %s' % query)
 
                        
 @route(PREFIX +'/renameplaylist')
@@ -379,12 +472,19 @@ def ConfirmDeletePlaylistMenu(playlistkey):
 def CancelAction(title, mode, params = {}):
     if mode == CANCEL_MODE_DELETE_PL:
         return DeletePlaylistMenu(title = L(TEXT_MENU_ACTION_DELETE_PLAYLIST))
-    elif mode == CANCEL_MODE_REMOVE_TR:
+    elif mode == CANCEL_MODE_REMOVE_TR or mode == CANCEL_MODE_ASK_ACTION:
         if params != None and 'playlistkey' in params.keys():
             playlistkey = params['playlistkey']
-            return PlaylistMenu(title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_REMOVE, allPlaylists[playlistkey]),
-                                key = playlistkey,
-                                mode = PL_MODE_DELETE)
+            if mode == CANCEL_MODE_REMOVE_TR:
+                return PlaylistMenu(title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_REMOVE, allPlaylists[playlistkey]),
+                                    key = playlistkey,
+                                    mode = PL_MODE_DELETE)
+            else:
+                return PlaylistMenu(title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_ASK, allPlaylists[playlistkey]),
+                                    key = playlistkey,
+                                    mode = PL_MODE_ASK)
+    elif mode == CANCEL_MODE_EDIT_PLAYLIST:
+        return MaintainTracksMenu(title = L(TEXT_MENU_ACTION_EDIT_PLAYLIST))
     return showMessage(title)
 
 @route(PREFIX +'/dodeleteplaylist')
@@ -628,6 +728,9 @@ def DeleteSinglePlaylist(playlistkey):
 # Generic helper functions
 ####################################################################################################
 
+def trackTitle(title, index):
+    return '%02d - %s' % (index, title)
+
 def getNextPlaylistKey():
     if allPlaylists != None:
         nextKey = 1
@@ -674,7 +777,7 @@ def trackInPlaylist(trackkey, playlist):
     return False
 
 def showMessage(message_text):
-    return ObjectContainer(header=NAME, message=message_text, no_history = True, no_cache = True)
+    return ObjectContainer(header = L(MAIN_TITLE), message=message_text, no_history = True, no_cache = True)
 
 @route(PREFIX + '/supportpath')
 def GetSupportPath(directory, subdirectory = None):
