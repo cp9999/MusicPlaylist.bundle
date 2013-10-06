@@ -14,6 +14,7 @@
 #
 # FEATURE WISHLIST:
 #   Some playlist funtionality ideas:
+#       = Keep track of total duration && ratingKey for a playlist
 #       = Shuffle mode (also store as setting in the playlist.xml)
 #           [DONE] Static: e.g. Populate the track list in a random order when playlist is opened for playback 
 #           Dynamic: e.g. Building an URL service for playing the playlist. The service would determine the next track to play
@@ -23,9 +24,7 @@
 #       = Sort of 'On Deck' functionality for running playlist
 #           Requires knowledge of what's happening in the player (e.g. like callbacks when song is done )
 #           or maybe replace the standard TrackObject for playing tracks with our own URL service for starting the songs
-#       = Add a metadata service (much like the standard PMS ones) to retrieve metadata for the playlists
-#       = Add URL service(s) for playlist maintenance actions (like 'create playlist', 'add track', and so on)
-#           This would enable creation of more advanced external tools for managing playlist
+#       = Create more advanced external tools for managing playlist, 
 #
 #
 # QUESTIONS:
@@ -34,6 +33,22 @@
 #   3. How to set the correct album art per track in the list (is that even possible)?
 #
 #
+
+#######################################################################################################################
+# URL's for managing playlist
+#
+#[PMS-IP:PMS-PORT]/music/playlists/playlists
+#[PMS-IP:PMS-PORT]/music/playlists/playlists/list?key=<playlist key>
+#
+#[PMS-IP:PMS-PORT]/music/playlists/playlists/create?title=<title>&pltype=<SIMPLE|SMART>&description=<description>
+#[PMS-IP:PMS-PORT]/music/playlists/playlists/delete?key=<playlist key>
+#[PMS-IP:PMS-PORT]/music/playlists/playlists/rename?key=<playlist key>&newname=<new name>
+#
+#[PMS-IP:PMS-PORT]/music/playlists/tracks/add?playlistkey=<playlist key>&key=<track key>
+#[PMS-IP:PMS-PORT]/music/playlists/tracks/remove?playlistkey=<playlist key>&key=<track key>
+#[PMS-IP:PMS-PORT]/music/playlists/tracks/move?playlistkey=<playlist key>&key=<track key>&to=<new position>
+#######################################################################################################################
+
 
 import json
 import os
@@ -228,8 +243,7 @@ def MainMenu():
 ####################################################################################################
 
 
-
-@route(PREFIX +'/openplaylistoption')
+#@route(PREFIX +'/openplaylistoption')
 def OpenPlaylistMenu(title, playlistkey):
     oc = ObjectContainer(title1 = L(TEXT_TITLE_SELECT_PLAYMODE), no_cache = True, no_history = True)
 
@@ -241,7 +255,7 @@ def OpenPlaylistMenu(title, playlistkey):
     return oc    
 
 
-@route(PREFIX +'/playlistmenu')
+#@route(PREFIX +'/playlistmenu')
 def PlaylistMenu(title, playlistkey, mode):
     # todo
     oc = ObjectContainer(title2 = title, view_group='List', art = R('icon-default.png'),
@@ -260,13 +274,13 @@ def PlaylistMenu(title, playlistkey, mode):
         track_nr = 0
         for track in tracks:
             track_nr += 1
-            oc.add(createTrackObject(track = track, index = track_nr, pms_url = pms_url))
+            oc.add(createTrackObject(track = track, index = track_nr, pms_url = pms_url, playlistkey = playlistkey))
         return oc
                     
     return showMessage(message_text = L(TEXT_MSG_EMPTY_PLAYLIST) )
 
 
-def createTrackObject(track, index, pms_url):
+def createTrackObject(track, index, pms_url, playlistkey):
     title = trackTitle(title = track.get(ATTR_TITLE), index = index)
     key = track.get(ATTR_KEY)
     ratingKey = track.get(ATTR_RATINGKEY)            
@@ -277,7 +291,12 @@ def createTrackObject(track, index, pms_url):
     if track.get(ATTR_THUMB) != None:
         trackObject.thumb = pms_url + track.get(ATTR_THUMB)
     partkey = track.get(ATTR_PARTKEY)
-    mediaObject = MediaObject( parts = [PartObject(key = partkey)] )
+    #mediaObject = MediaObject( parts = [PartObject(key = partkey)] )
+    mediaObject = MediaObject( parts = [PartObject(key = Callback(playSingleTrack,
+                                                                  track_url=partkey,
+                                                                  trackkey = key,
+                                                                  index = index,
+                                                                  playlistkey = playlistkey))] )
     mediaObject.duration = trackObject.duration
     mediaObject.bitrate = attributeAsInt(track.get(ATTR_BITRATE))
     mediaObject.audio_channels = attributeAsInt(track.get(ATTR_AUDIOCHANNELS))
@@ -289,15 +308,22 @@ def createTrackObject(track, index, pms_url):
     return trackObject
 
 
+@route(PREFIX +'/playsingletrack', index=int)
+def playSingleTrack(track_url, trackkey, index, playlistkey):
+    # Keep track of the song
+    # Store track info:
+    #   For on deck funcionality    
+    return Redirect(track_url)
+
+
 ####################################################################################################
 # Playlist maintenance
 ####################################################################################################
 
-@route(PREFIX +'/maintenance')
+#@route(PREFIX +'/maintenance')
 def MaintenanceMenu(title):
     oc = ObjectContainer(title2 = title, view_group='List')
     newsetting = { NEW_PL_TITLE : 'New playlist', NEW_PL_TYPE : PL_TYPE_SIMPLE, NEW_PL_DESCRIPTION : ''}
-    Log.Debug(newsetting[NEW_PL_TITLE])
     playlists_present = (allPlaylists != None and len(allPlaylists) > 0)
     if playlists_present:
         oc.add(DirectoryObject(key = Callback(BrowseMusicMenu, title = L(TEXT_MENU_ACTION_ADD_TRACKS)), title = L(TEXT_MENU_ACTION_ADD_TRACKS)))  
@@ -314,7 +340,7 @@ def MaintenanceMenu(title):
 # Edit playlist
 #
 
-@route(PREFIX +'/maintainplaylist')
+#@route(PREFIX +'/maintainplaylist')
 def MaintainTracksMenu(title):
     oc = ObjectContainer(title2 = title, no_cache = True, no_history = True)
 
@@ -325,7 +351,7 @@ def MaintainTracksMenu(title):
     return oc
 
 
-@route(PREFIX +'/selecteditmode')
+#@route(PREFIX +'/selecteditmode')
 def SelectModeTrackMenu(playlistkey, listtitle):
     oc = ObjectContainer(title1 = L(TEXT_TITLE_SELECT_EDITMODE), no_cache = True, no_history = True)
 
@@ -355,7 +381,7 @@ def SelectModeTrackMenu(playlistkey, listtitle):
     return oc
 
 
-@route(PREFIX +'/playlistedit')
+#@route(PREFIX +'/playlistedit')
 def PlaylistEditMenu(title, key, mode, replace_parent = True):
     oc = ObjectContainer(title2 = title, view_group='List', art = R('icon-default.png'),
                          no_cache = True,
@@ -389,8 +415,6 @@ def createMaintainTrackObject(track, index, playlistkey, mode):
                                title = title)
     elif mode == PL_MODE_MOVE:
         return InputDirectoryObject(key = Callback(moveTrack, playlistkey = playlistkey, trackkey = key,
-                                                   tracktitle = title,
-                                                   trackindex = index,
                                                    mode = PL_MODE_MOVE),
                                     title = title,
                                     prompt = L(TEXT_MENU_EDITPL_MOVE_PROMPT))
@@ -401,7 +425,7 @@ def createMaintainTrackObject(track, index, playlistkey, mode):
     # Should not happen !
 
 
-@route(PREFIX +'/confirmremovetrack')
+#@route(PREFIX +'/confirmremovetrack')
 def ConfirmRemoveTrackMenu(playlistkey, key, tracktitle):
     oc = ObjectContainer(title1 = L(TEXT_TITLE_CONFIRM_DELETE), no_cache = True, no_history = True)
 
@@ -425,8 +449,6 @@ def AskActionTrackMenu(playlistkey, key, tracktitle, trackindex):
                            title = L(TEXT_MENU_ACTION_REMOVE_TRACK)))
 
     oc.add(InputDirectoryObject(key = Callback(moveTrack, playlistkey = playlistkey, trackkey = key,
-                                               tracktitle = tracktitle,
-                                               trackindex = trackindex,
                                                mode = PL_MODE_ASK),
                                 title = L(TEXT_MENU_ACTION_MOVE_TRACK),
                                 prompt = L(TEXT_MENU_EDITPL_MOVE_PROMPT)))    
@@ -437,16 +459,19 @@ def AskActionTrackMenu(playlistkey, key, tracktitle, trackindex):
     return oc
 
 
-@route(PREFIX +'/removefromplaylist')
+#@route(PREFIX +'/removefromplaylist')
+@indirect
 def removeFromPlaylist(playlistkey, key, tracktitle, mode):
     Log.Debug('removing track from  playlist')
     playlist = LoadSinglePlaylist(playlistkey)
     if playlist != None:
         tracks = playlist.xpath('%s[@key="%s"]' % (PL_XPATH_TRACK, key))
         for track in tracks:
+            if tracktitle == '':
+                tracktitle = track.get(ATTR_TITLE)
             playlist.remove(track)
-
         SaveSinglePlaylist(playlistkey, playlist)
+        
         if mode == PL_MODE_ASK:
             # Directly return to the playlist
             return PlaylistEditMenu(title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_ASK, allPlaylists[playlistkey]),
@@ -457,13 +482,13 @@ def removeFromPlaylist(playlistkey, key, tracktitle, mode):
     pass
 
 
-@route(PREFIX +'/movetrack', trackindex=int)
-def moveTrack(query, playlistkey, trackkey, tracktitle, trackindex, mode):
+@indirect
+def moveTrack(query, playlistkey, trackkey, mode):
     if query != None and len(query) > 0:
         #try:
         # the query must be a valid integer !
         new_position = int(query)
-        if new_position != trackindex and new_position > 0:
+        if  new_position > 0:
             # Let's Move the track
             playlist = LoadSinglePlaylist(playlistkey)
             if playlist != None:
@@ -471,6 +496,10 @@ def moveTrack(query, playlistkey, trackkey, tracktitle, trackindex, mode):
                 track = playlist.xpath('%s[@key="%s"]' % (PL_XPATH_TRACK, trackkey))[0]
                 if track != None:
                     track_parent = track.getparent()
+                    trackindex = track_parent.index(track) + 1
+                    Log.Debug('moveTrack: Original position = %d' % trackindex)
+                    if new_position == trackindex:                        
+                        return showMessage(message_text = L(TEXT_MSG_TRACK_NOT_MOVED))                
                     # Insert the element at
                     if new_position < trackindex:
                         new_position = new_position - 1
@@ -571,7 +600,7 @@ def addPlaylist(settings):
 # Rename playlist
 #
 
-@route(PREFIX +'/renameplaylist')
+#@route(PREFIX +'/renameplaylist')
 def RenamePlaylistMenu(title):
     oc = ObjectContainer(title2 = title, no_cache = True, no_history = True)
 
@@ -583,7 +612,7 @@ def RenamePlaylistMenu(title):
     return oc
 
 
-@route(PREFIX +'/dorenameplaylist')
+#@route(PREFIX +'/dorenameplaylist')
 def RenamePlaylist(query, playlistkey):
     if query != None and len(query) > 0:
         # change title in main list
@@ -603,7 +632,7 @@ def RenamePlaylist(query, playlistkey):
 # Delete playlist 
 #
 
-@route(PREFIX +'/deleteplaylist')
+#@route(PREFIX +'/deleteplaylist')
 def DeletePlaylistMenu(title):
     oc = ObjectContainer(title2 = title, no_cache = True, no_history = True)
 
@@ -618,7 +647,7 @@ def DeletePlaylistMenu(title):
     return oc
 
 
-@route(PREFIX +'/confirmdeleteplaylist')
+#@route(PREFIX +'/confirmdeleteplaylist')
 def ConfirmDeletePlaylistMenu(playlistkey):
     oc = ObjectContainer(title1 = L(TEXT_TITLE_CONFIRM_DELETE), no_cache = True, no_history = True)
 
@@ -628,7 +657,7 @@ def ConfirmDeletePlaylistMenu(playlistkey):
     return oc
 
 
-@route(PREFIX +'/dodeleteplaylist')
+#@route(PREFIX +'/dodeleteplaylist')
 def DeletePlaylist(playlistkey):
     if playlistkey != None and playlistkey in allPlaylists.keys():
         # Delete the playlist file
@@ -667,14 +696,13 @@ def CancelAction(title, mode, params = {}):
 # Browse music sections
 ####################################################################################################
 
-@route(PREFIX +'/browsemusic')
+#@route(PREFIX +'/browsemusic')
 def BrowseMusicMenu(title):    
     oc = ObjectContainer(title2 = title, view_group='List')
     pms_url = 'http://%s:%s' %(Prefs[PREFS__PLEXIP], Prefs[PREFS__PLEXPORT])
     
     sectionUrl = pms_url + LIBRARY_SECTIONS
     el = XML.ElementFromURL(sectionUrl)
-    #Log.Debug('element is "%s"' % XML.StringFromElement(el))
 
     sections = el.xpath('%s[@scanner="Plex Music Scanner"]' % PMS_XPATH_DIRECTORY)	
     for section in sections:	
@@ -684,7 +712,7 @@ def BrowseMusicMenu(title):
         
     return oc
 
-@route(PREFIX +'/browsesection')
+#@route(PREFIX +'/browsesection')
 def BrowseSectionMenu(parentUrl, title, section, append_trailing_slash = True):
     oc = ObjectContainer(title2 = title, view_group='List')
   
@@ -692,7 +720,6 @@ def BrowseSectionMenu(parentUrl, title, section, append_trailing_slash = True):
     if append_trailing_slash:
         sectionUrl = sectionUrl + '/'
     el = XML.ElementFromURL(sectionUrl)
-    Log.Debug('section element is "%s"' % XML.StringFromElement(el))
   
     viewgroup = el.get(ATTR_VIEWGROUP)
     if (viewgroup == 'track' or firstElement(el, PMS_XPATH_TRACK) != None):
@@ -730,7 +757,7 @@ def SearchMenu(query, key, title):
     return showMessage(L(TEXT_ERROR_EMPTY_SEARCH_QUERY))
 
 
-@route(PREFIX +'/browsetrack')
+#@route(PREFIX +'/browsetrack')
 def BrowseTrackPopupMenu(key, tracktitle):
     oc = ObjectContainer(title2 = L(TEXT_MENU_TITLE_TRACK_ACTIONS), no_cache = True)
     oc.title1 = L(TEXT_MENU_TITLE_TRACK_ACTIONS)
@@ -742,18 +769,18 @@ def BrowseTrackPopupMenu(key, tracktitle):
     return oc
 
 
-@route(PREFIX +'/addtoplaylist')
-def addToPlaylist(playlistkey, key, tracktitle):   
+def addToPlaylist(playlistkey, key, tracktitle = ''):   
     # use key to get the track information
     pms_url = 'http://%s:%s' %(Prefs[PREFS__PLEXIP], Prefs[PREFS__PLEXPORT])
     trackUrl = pms_url + key + '/'
     el = XML.ElementFromURL(trackUrl)
     if el == None:
         return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_ERROR_NO_METADATA, key))                      
-    Log.Debug('track element is "%s"' % XML.StringFromElement(el))
     track = firstElement(el, PMS_XPATH_TRACK)
     if track == None:
-        return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_ERROR_NO_TRACK_FOUND, tracktitle, key))                        
+        return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_ERROR_NO_TRACK_FOUND, tracktitle, key))
+    if tracktitle == '':
+        tracktitle = track.get(ATTR_TITLE)
     media = firstElement(track, PMS_XPATH_MEDIA)
     if media == None:
         return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_ERROR_NO_MEDIA_FOR_TRACK, tracktitle, key))                
@@ -761,7 +788,6 @@ def addToPlaylist(playlistkey, key, tracktitle):
     if part == None:
         return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_ERROR_NO_TRACK_DATA, tracktitle, key))                
 
-    Log.Debug('adding track to playlist')
     playlist = LoadSinglePlaylist(playlistkey)
     if playlist != None:
         if trackInPlaylist(track.get(ATTR_KEY), playlist) == True:
@@ -844,7 +870,6 @@ def LoadGlobalPlaylistsFile(playlistsName):
     return None
 
 
-@route(PREFIX +'/createglobalplaylist')
 def CreateGlobalPlaylist():    
     allPlaylists = {}
     newplaylists = etree.Element(PLAYLIST_ALL_ROOT)
@@ -854,7 +879,7 @@ def CreateGlobalPlaylist():
     return newplaylists;
 
 
-def LoadSinglePlaylist(playlistkey):   
+def LoadSinglePlaylist(playlistkey, createifmissing = True):   
     full_filename = GetPlaylistFileName(playlistkey)
     Log.Debug('LoadSinglePlaylist: %s' % full_filename)
     if os.path.isfile(full_filename):
@@ -865,8 +890,10 @@ def LoadSinglePlaylist(playlistkey):
         except:            
             Log.Debug('ERROR: in LoadSinglePlaylist(%s)' % full_filename)
             return None
-    newsettings = { NEW_PL_TITLE : allPlaylists[playlistkey], NEW_PL_TYPE : PL_TYPE_SIMPLE, NEW_PL_DESCRIPTION : ''}
-    return CreateSinglePlaylist(playlistkey = playlistkey, settings = newsettings)
+    if createifmissing == True:
+        newsettings = { NEW_PL_TITLE : allPlaylists[playlistkey], NEW_PL_TYPE : PL_TYPE_SIMPLE, NEW_PL_DESCRIPTION : ''}
+        return CreateSinglePlaylist(playlistkey = playlistkey, settings = newsettings)
+    return None
 
 
 def SaveSinglePlaylist(playlistkey, playlist):
@@ -882,7 +909,6 @@ def SaveSinglePlaylist(playlistkey, playlist):
     pass    
     
 
-@route(PREFIX +'/createsingleplaylist', settings=dict)
 def CreateSinglePlaylist(playlistkey, settings = {}):    
     newplaylist = etree.Element(PLAYLIST_ROOT)
     if newplaylist != None:
@@ -906,7 +932,6 @@ def DeleteSinglePlaylist(playlistkey):
     pass
 
 
-@route(PREFIX +'/getplaylistname')
 def getPlaylistName(full_path = True):
     username = Prefs[PREFS__USERNAME]
     playlistsName = '%s_allPlaylists.xml' % username
@@ -926,9 +951,194 @@ def getNextPlaylistKey():
     return None
 
 
+##
+# Methods to provide easy access through URL. Not called directly by the plugin
+#
+
+@route(PREFIX +'/playlists')
+def allPlaylists():
+    oc = ObjectContainer(title1 = 'All playlists', no_cache = True)
+
+    playlistsElem = LoadGlobalPlaylistsFile(playlistsName = getPlaylistName())
+    if playlistsElem != None:
+        for playlist in playlistsElem.xpath(PL_XPATH_PLAYLIST):
+            key = playlist.get(ATTR_KEY)
+            title = playlist.get(ATTR_TITLE)
+            oc.add(DirectoryObject(key = key, title = title))
+    return oc
+
+
+@route(PREFIX +'/playlists/list')
+def singlePlaylist(key):
+    if validatePlaylistKey(key):
+        playlist = LoadSinglePlaylist(playlistkey = key, createifmissing = False)
+        oc = ObjectContainer(title1 = key, title2 = playlist.get(ATTR_TITLE), no_cache = True, content = ContainerContent.Tracks)
+        if playlist != None:
+            tracks = playlist.xpath(PL_XPATH_TRACK)
+            track_nr = 0
+            for track in tracks:
+                track_nr += 1
+                title = track.get(ATTR_TITLE)
+                key = track.get(ATTR_KEY)
+                ratingKey = track.get(ATTR_RATINGKEY)            
+                trackObject = TrackObject(title = title, key = key,
+                                          rating_key = ratingKey,
+                                          duration = attributeAsInt(track.get(ATTR_DURATION)))
+                oc.add(trackObject)
+        return oc
+    return showMessage('ERROR: No playlist with key %s found' % key)
+
+
+@route(PREFIX +'/playlists/create')
+def createNewPlaylist(title, pltype, description):    
+    if validatePlaylistType(pltype):
+        newsettings = { NEW_PL_TITLE : title, NEW_PL_TYPE : pltype, NEW_PL_DESCRIPTION : description}    
+        return CreatePLCreatePlaylist(settings = newsettings)
+    return showMessage('ERROR: Playlist type %s not supported' % pltype)
+
+
+@route(PREFIX +'/playlists/delete')
+def deleteSinglePlaylist(key):
+    if validatePlaylistKey(key):
+        return DeletePlaylist(playlistkey = key)
+    return showMessage('ERROR: No playlist with key %s found' % key)
+
+
+@route(PREFIX +'/playlists/rename')
+def renameSinglePlaylist(key, newname):
+    if validatePlaylistKey(key):
+        return RenamePlaylist(query = newname, playlistkey = key)
+    return showMessage('ERROR: No playlist with key %s found' % key)
+
+
+@route(PREFIX +'/tracks/add')
+def addTrackToPlaylist(playlistkey, key):
+    if validatePlaylistKey(playlistkey):
+        if not key.startswith('/'):
+            key = '/library/metadata/%s' % key
+        return addToPlaylist(playlistkey = playlistkey, key = key)
+    return showMessage('ERROR: No playlist with key %s found' % playlistkey)
+
+
+@route(PREFIX +'/tracks/remove')
+def removeTrackFromPlaylist(playlistkey, key):
+    if validatePlaylistKey(playlistkey):
+        if not key.startswith('/'):
+            key = '/library/metadata/%s' % key
+        return removeFromPlaylist(playlistkey = playlistkey, key = key, tracktitle = '', mode = PL_MODE_DELETE)
+    return showMessage('ERROR: No playlist with key %s found' % playlistkey)
+
+
+@route(PREFIX +'/tracks/move')
+def moveTrackInPlaylist(playlistkey, key, to):
+    if validatePlaylistKey(playlistkey):
+        if not key.startswith('/'):
+            key = '/library/metadata/%s' % key
+        return moveTrack(query = to,
+                         playlistkey = playlistkey,
+                         trackkey = key,
+                         mode = PL_MODE_MOVE)
+    return showMessage('ERROR: No playlist with key %s found' % playlistkey)
+
+
+@route(PREFIX + '/tracks/addall')
+def addAllTracksToPlaylist(playlistkey):    
+    if validatePlaylistKey(playlistkey):
+        playlist = LoadSinglePlaylist(playlistkey, createifmissing = False)
+        if playlist != None:
+            pms_url = 'http://%s:%s' %(Prefs[PREFS__PLEXIP], Prefs[PREFS__PLEXPORT])              
+            sectionUrl = pms_url + LIBRARY_SECTIONS
+            el = XML.ElementFromURL(sectionUrl)
+            tracks_added = 0
+            sections = el.xpath('%s[@scanner="Plex Music Scanner"]' % PMS_XPATH_DIRECTORY)	
+            for section in sections:	
+                title = section.get(ATTR_TITLE)
+                key = section.get(ATTR_KEY) + '/all'
+                tracks_added += addAllTracksFromSection(playlist = playlist, parentUrl = sectionUrl, section = key)
+
+            if tracks_added > 0:
+                SaveSinglePlaylist(playlistkey, playlist)            
+        return showMessage('%d Tracks added to playlist with key %s' % (tracks_added, playlistkey))
+    return showMessage('ERROR: No playlist with key %s found' % playlistkey)
+
+
+def addAllTracksFromSection(playlist, parentUrl, section):
+    sectionUrl = parentUrl + section 
+    el = XML.ElementFromURL(sectionUrl)  
+    tracks_added = 0
+    viewgroup = el.get(ATTR_VIEWGROUP)
+    if (viewgroup == 'track' or firstElement(el, PMS_XPATH_TRACK) != None):
+        tracks = el.xpath(PMS_XPATH_TRACK)
+        for track in tracks:
+            key = track.get(ATTR_KEY)
+            tracks_added += addSingleTrackToPlaylist(playlist = playlist, key = key)
+    else:
+        sections = el.xpath(PMS_XPATH_DIRECTORY)	
+        pms_url = 'http://%s:%s' %(Prefs[PREFS__PLEXIP], Prefs[PREFS__PLEXPORT])
+        for section in sections:	
+            key = section.get(ATTR_KEY)
+            if attributeAsInt(section.get(ATTR_SEARCH)) != 0:
+                pass
+            else:
+                if key.startswith('/'):
+                    parentUrl = pms_url
+                else:
+                    parentUrl = sectionUrl
+                tracks_added += addAllTracksFromSection(playlist = playlist, parentUrl = parentUrl, section = key)
+  
+    return tracks_added     
+
+def addSingleTrackToPlaylist(playlist, key):   
+    # use key to get the track information
+    if playlist == None:
+        return 0
+    pms_url = 'http://%s:%s' %(Prefs[PREFS__PLEXIP], Prefs[PREFS__PLEXPORT])
+    trackUrl = pms_url + key + '/'
+    el = XML.ElementFromURL(trackUrl)
+    if el == None:
+        return 0
+    track = firstElement(el, PMS_XPATH_TRACK)
+    if track == None:
+        return 0
+    media = firstElement(track, PMS_XPATH_MEDIA)
+    if media == None:
+        return 0
+    part = firstElement(media, PMS_XPATH_PART)
+    if part == None:
+        return 0
+
+    if trackInPlaylist(track.get(ATTR_KEY), playlist) == True:
+        return 0
+
+    elNewtrack = etree.SubElement(playlist, 'Track')
+    # atributes for TrackObject
+    elNewtrack.set(ATTR_KEY, track.get(ATTR_KEY))                                                
+    elNewtrack.set(ATTR_TITLE, track.get(ATTR_TITLE))
+    setAttributeIfPresent(elNewtrack, track, ATTR_RATINGKEY)
+    setAttributeIfPresent(elNewtrack, part, ATTR_DURATION)
+    setAttributeIfPresent(elNewtrack, track, ATTR_ART)
+    setAttributeIfPresent(elNewtrack, track, ATTR_THUMB)
+    # additional atributes for MediaObject
+    setAttributeIfPresent(elNewtrack, media, ATTR_BITRATE)
+    setAttributeIfPresent(elNewtrack, media, ATTR_AUDIOCODEC)
+    setAttributeIfPresent(elNewtrack, media, ATTR_AUDIOCHANNELS)
+    setAttributeIfPresent(elNewtrack, media, ATTR_CONTAINER)
+    # additional atributes for PartObject
+    elNewtrack.set(ATTR_PARTKEY, pms_url + part.get(ATTR_KEY))
+    return 1
+
+
 ####################################################################################################
 # Generic helper functions
 ####################################################################################################
+
+def validatePlaylistType(pltype):
+    return pltype in PL_TYPES
+
+
+def validatePlaylistKey(key):
+    return allPlaylists != None and key in allPlaylists.keys()
+
 
 def trackTitle(title, index):
     return '%02d - %s' % (index, title)
@@ -937,10 +1147,12 @@ def trackTitle(title, index):
 def keyString(key_number):
     return '%04d' % key_number
 
+
 def setAttributeIfPresent(to_elem, from_elem, attr_name):
     if to_elem != None and from_elem != None and attr_name != None and from_elem.get(attr_name) != None:
         to_elem.set(attr_name, from_elem.get(attr_name))
     pass
+
 
 def attributeAsInt(attr_value, def_value = 0):
     if attr_value != None:
@@ -950,6 +1162,7 @@ def attributeAsInt(attr_value, def_value = 0):
         except Exception:
             pass
     return def_value
+
 
 def firstElement(element, query):
     if element != None and query != None:
@@ -961,7 +1174,7 @@ def firstElement(element, query):
             pass
     return None
 
-@route(PREFIX +'/trackinplaylist')
+
 def trackInPlaylist(trackkey, playlist):
     if playlist != None and trackkey != None:
         track = playlist.xpath('%s[@key="%s"]' % (PL_XPATH_TRACK, trackkey))
@@ -969,14 +1182,15 @@ def trackInPlaylist(trackkey, playlist):
             return True
     return False
 
+
 def showMessage(message_text):
     return ObjectContainer(header = L(TEXT_MAIN_TITLE), message=message_text, no_history = True, no_cache = True)
 
-@route(PREFIX + '/supportpath')
+
 def GetSupportPath(directory, subdirectory = None):
     return Core.storage.join_path(Core.app_support_path, Core.config.plugin_support_dir_name, directory, PLUGIN_DIR, subdirectory)
 
-@route(PREFIX + '/playlistfilename')
+
 def GetPlaylistFileName(playlistkey):
     playlist_filename = '%s - %s.xml' % (Prefs[PREFS__USERNAME], playlistkey)
     return Core.storage.join_path(GetSupportPath('Data', 'DataItems'), playlist_filename)
