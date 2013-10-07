@@ -98,6 +98,7 @@ ATTR_SEARCH = 'search'
 ATTR_PROMPT = 'prompt'
 ATTR_PLTYPE = 'playlisttype'
 ATTR_DESCR = 'description'
+ATTR_PMS_URL = 'pmsurl'
 
 # Create new playlist / maintenance
 NEW_PL_TITLE = 'title'
@@ -283,20 +284,26 @@ def PlaylistMenu(title, playlistkey, mode):
 def createTrackObject(track, index, pms_url, playlistkey):
     title = trackTitle(title = track.get(ATTR_TITLE), index = index)
     key = track.get(ATTR_KEY)
-    ratingKey = track.get(ATTR_RATINGKEY)            
+    ratingKey = track.get(ATTR_RATINGKEY)
+    if track.get(ATTR_PMS_URL) != None:
+        pms_url = track.get(ATTR_PMS_URL)
     trackObject = TrackObject(title = title, key = pms_url + key, rating_key = ratingKey)
     trackObject.duration = attributeAsInt(track.get(ATTR_DURATION))
     #if track.get('art') != None:
-    #    to.art = pms_main_url + track.get('art')
+    #    to.art = track.get('art')
     if track.get(ATTR_THUMB) != None:
         trackObject.thumb = pms_url + track.get(ATTR_THUMB)
-    partkey = track.get(ATTR_PARTKEY)
-    #mediaObject = MediaObject( parts = [PartObject(key = partkey)] )
-    mediaObject = MediaObject( parts = [PartObject(key = Callback(playSingleTrack,
-                                                                  track_url=partkey,
-                                                                  trackkey = key,
-                                                                  index = index,
-                                                                  playlistkey = playlistkey))] )
+    partkey = track.get(ATTR_PARTKEY)    
+    if not partkey.startswith('http'):
+        partkey = pms_url + partkey
+    if Client.Platform == ClientPlatform.Windows:
+        mediaObject = MediaObject( parts = [PartObject(key = partkey)] )
+    else:
+        mediaObject = MediaObject( parts = [PartObject(key = Callback(playSingleTrack,
+                                                                      track_url = partkey,
+                                                                      trackkey = key,
+                                                                      index = '%d' % index,
+                                                                      playlistkey = playlistkey))] )
     mediaObject.duration = trackObject.duration
     mediaObject.bitrate = attributeAsInt(track.get(ATTR_BITRATE))
     mediaObject.audio_channels = attributeAsInt(track.get(ATTR_AUDIOCHANNELS))
@@ -308,11 +315,12 @@ def createTrackObject(track, index, pms_url, playlistkey):
     return trackObject
 
 
-@route(PREFIX +'/playsingletrack', index=int)
+@route(PREFIX +'/playsingletrack')
 def playSingleTrack(track_url, trackkey, index, playlistkey):
     # Keep track of the song
     # Store track info:
-    #   For on deck funcionality    
+    #   For on deck funcionality
+    Log.Debug('playSingleTrack: %s' % track_url)
     return Redirect(track_url)
 
 
@@ -793,25 +801,31 @@ def addToPlaylist(playlistkey, key, tracktitle = ''):
         if trackInPlaylist(track.get(ATTR_KEY), playlist) == True:
             return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_MSG_TRACK_ALREADY_IN_PLAYLIST, tracktitle, key))                
 
-        elNewtrack = etree.SubElement(playlist, 'Track')
-        # atributes for TrackObject
-        elNewtrack.set(ATTR_KEY, track.get(ATTR_KEY))                                                
-        elNewtrack.set(ATTR_TITLE, track.get(ATTR_TITLE))
-        setAttributeIfPresent(elNewtrack, track, ATTR_RATINGKEY)
-        setAttributeIfPresent(elNewtrack, part, ATTR_DURATION)
-        setAttributeIfPresent(elNewtrack, track, ATTR_ART)
-        setAttributeIfPresent(elNewtrack, track, ATTR_THUMB)
-        # additional atributes for MediaObject
-        setAttributeIfPresent(elNewtrack, media, ATTR_BITRATE)
-        setAttributeIfPresent(elNewtrack, media, ATTR_AUDIOCODEC)
-        setAttributeIfPresent(elNewtrack, media, ATTR_AUDIOCHANNELS)
-        setAttributeIfPresent(elNewtrack, media, ATTR_CONTAINER)
-        # additional atributes for PartObject
-        elNewtrack.set(ATTR_PARTKEY, pms_url + part.get(ATTR_KEY))
+        createTrackElement(playlist = playlist, track = track, media = media, part = part, pms_url = pms_url)
         SaveSinglePlaylist(playlistkey, playlist)
         return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_MSG_TRACK_ADDED_TO_PLAYLIST, tracktitle, allPlaylists[playlistkey]))
             
     return showMessage(message_text = L(TEXT_ERROR_TRACK_NOT_ADDED))
+
+
+def createTrackElement(playlist, track, media, part, pms_url):
+    elNewtrack = etree.SubElement(playlist, 'Track')
+    # atributes for TrackObject
+    elNewtrack.set(ATTR_KEY, track.get(ATTR_KEY))                                                
+    elNewtrack.set(ATTR_TITLE, track.get(ATTR_TITLE))
+    elNewtrack.set(ATTR_PMS_URL, pms_url)
+    setAttributeIfPresent(elNewtrack, track, ATTR_RATINGKEY)
+    setAttributeIfPresent(elNewtrack, part, ATTR_DURATION)
+    setAttributeIfPresent(elNewtrack, track, ATTR_ART)
+    setAttributeIfPresent(elNewtrack, track, ATTR_THUMB)
+    # additional atributes for MediaObject
+    setAttributeIfPresent(elNewtrack, media, ATTR_BITRATE)
+    setAttributeIfPresent(elNewtrack, media, ATTR_AUDIOCODEC)
+    setAttributeIfPresent(elNewtrack, media, ATTR_AUDIOCHANNELS)
+    setAttributeIfPresent(elNewtrack, media, ATTR_CONTAINER)
+    # additional atributes for PartObject
+    elNewtrack.set(ATTR_PARTKEY, part.get(ATTR_KEY))
+    pass
 
 
 ####################################################################################################
@@ -1110,21 +1124,7 @@ def addSingleTrackToPlaylist(playlist, key):
     if trackInPlaylist(track.get(ATTR_KEY), playlist) == True:
         return 0
 
-    elNewtrack = etree.SubElement(playlist, 'Track')
-    # atributes for TrackObject
-    elNewtrack.set(ATTR_KEY, track.get(ATTR_KEY))                                                
-    elNewtrack.set(ATTR_TITLE, track.get(ATTR_TITLE))
-    setAttributeIfPresent(elNewtrack, track, ATTR_RATINGKEY)
-    setAttributeIfPresent(elNewtrack, part, ATTR_DURATION)
-    setAttributeIfPresent(elNewtrack, track, ATTR_ART)
-    setAttributeIfPresent(elNewtrack, track, ATTR_THUMB)
-    # additional atributes for MediaObject
-    setAttributeIfPresent(elNewtrack, media, ATTR_BITRATE)
-    setAttributeIfPresent(elNewtrack, media, ATTR_AUDIOCODEC)
-    setAttributeIfPresent(elNewtrack, media, ATTR_AUDIOCHANNELS)
-    setAttributeIfPresent(elNewtrack, media, ATTR_CONTAINER)
-    # additional atributes for PartObject
-    elNewtrack.set(ATTR_PARTKEY, pms_url + part.get(ATTR_KEY))
+    createTrackElement(playlist = playlist, track = track, media = media, part = part, pms_url = pms_url)
     return 1
 
 
