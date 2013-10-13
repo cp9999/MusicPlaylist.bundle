@@ -61,6 +61,7 @@ NAME = 'Playlists'
 PREFIX = '/music/playlists'
 PLUGIN_DIR = 'com.plexapp.plugins.playlist'
 LIBRARY_SECTIONS = '/library/sections/'
+URL_MUSIC_PLAYLIST = 'http://com.plexapp.plugins.playlist/track'
 ART = 'art-default.png'
 ICON = 'icon-default.png'
 
@@ -208,18 +209,11 @@ def Start():
 def ValidatePrefs():
     return 
 
-def LoadGlobalData():
-    global allPlaylists
-    global pms_main_url
-    
+def LoadGlobalData():   
     # TODO: Get the correct full IP addres dynamically (not the localhost one)
     #       Cannot figure out how to retrieve the full IP address for the PMS server
     # Network.Address returns the 127.0.0.1 address. Playback using this IP address seems to not work
     #  (at least not for the windows Plex client). Using the full IP address (e.g. 192.xxx.xxx.xxx) does work
-    # Using IP address from preferences for now.
-    pms_main_url = 'http://%s:%s' %(Prefs[PREFS__PLEXIP], Prefs[PREFS__PLEXPORT])
-    
-    LoadGlobalPlaylists()   
     pass
   
 ####################################################################################################
@@ -227,6 +221,7 @@ def LoadGlobalData():
 def MainMenu():   
     oc = ObjectContainer(no_cache = True)
 
+    allPlaylists = LoadGlobalPlaylists()
     for playlistkey in allPlaylists.keys():
         listtitle = allPlaylists[playlistkey]
         oc.add(PopupDirectoryObject(key = Callback(OpenPlaylistMenu, title = listtitle, playlistkey = playlistkey),
@@ -259,9 +254,10 @@ def OpenPlaylistMenu(title, playlistkey):
 #@route(PREFIX +'/playlistmenu')
 def PlaylistMenu(title, playlistkey, mode):
     # todo
-    oc = ObjectContainer(title2 = title, view_group='List', art = R('icon-default.png'),
-                         content = ContainerContent.Tracks,
+    oc = ObjectContainer(title2 = title, view_group='List', art = R('icon-default.png'),                         
                          no_cache = True)
+    #if Client.Platform != ClientPlatform.Windows:
+    oc.content = ContainerContent.Tracks
     
     # load the playlist
     # This is an: etree.Element XML Element 
@@ -279,6 +275,19 @@ def PlaylistMenu(title, playlistkey, mode):
         return oc
                     
     return showMessage(message_text = L(TEXT_MSG_EMPTY_PLAYLIST) )
+
+
+def createTrackObjectURL(track, index, pms_url, playlistkey):
+    title = trackTitle(title = track.get(ATTR_TITLE), index = index)
+    key = track.get(ATTR_KEY)
+    url = URL_MUSIC_PLAYLIST + '?playlistkey=%s&trackkey=%s' % (playlistkey, key)
+    trackObject = TrackObject(url = url,
+                              title = title,
+                              duration = attributeAsInt(track.get(ATTR_DURATION))
+                              )
+    if track.get(ATTR_THUMB) != None:
+        trackObject.thumb = pms_url + track.get(ATTR_THUMB)
+    return trackObject
 
 
 def createTrackObject(track, index, pms_url, playlistkey):
@@ -315,13 +324,15 @@ def createTrackObject(track, index, pms_url, playlistkey):
     return trackObject
 
 
-@route(PREFIX +'/playsingletrack')
+#@indirect
+@route(PREFIX + '/playtrack')
 def playSingleTrack(track_url, trackkey, index, playlistkey):
     # Keep track of the song
     # Store track info:
     #   For on deck funcionality
     Log.Debug('playSingleTrack: %s' % track_url)
     return Redirect(track_url)
+    pass
 
 
 ####################################################################################################
@@ -331,6 +342,8 @@ def playSingleTrack(track_url, trackkey, index, playlistkey):
 #@route(PREFIX +'/maintenance')
 def MaintenanceMenu(title):
     oc = ObjectContainer(title2 = title, view_group='List')
+
+    allPlaylists = LoadGlobalPlaylists()
     newsetting = { NEW_PL_TITLE : 'New playlist', NEW_PL_TYPE : PL_TYPE_SIMPLE, NEW_PL_DESCRIPTION : ''}
     playlists_present = (allPlaylists != None and len(allPlaylists) > 0)
     if playlists_present:
@@ -352,6 +365,7 @@ def MaintenanceMenu(title):
 def MaintainTracksMenu(title):
     oc = ObjectContainer(title2 = title, no_cache = True, no_history = True)
 
+    allPlaylists = LoadGlobalPlaylists()
     for playlistkey in allPlaylists.keys():
         listtitle = allPlaylists[playlistkey]
         oc.add(PopupDirectoryObject(key = Callback(SelectModeTrackMenu, playlistkey = playlistkey, listtitle = listtitle),
@@ -482,7 +496,7 @@ def removeFromPlaylist(playlistkey, key, tracktitle, mode):
         
         if mode == PL_MODE_ASK:
             # Directly return to the playlist
-            return PlaylistEditMenu(title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_ASK, allPlaylists[playlistkey]),
+            return PlaylistEditMenu(title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_ASK,  playlist.get(ATTR_TITLE)),
                                     key = playlistkey,
                                     mode = PL_MODE_ASK)
         return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_MSG_TRACK_REMOVED_FROM_PLAYLIST, tracktitle))
@@ -515,7 +529,7 @@ def moveTrack(query, playlistkey, trackkey, mode):
                     SaveSinglePlaylist(playlistkey, playlist)
                     if mode == PL_MODE_ASK:
                         # Directly return to the playlist
-                        return PlaylistEditMenu(title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_ASK, allPlaylists[playlistkey]),
+                        return PlaylistEditMenu(title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_ASK, playlist.get(ATTR_TITLE)),
                                                 key = playlistkey,
                                                 mode = PL_MODE_ASK)
                     return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_MSG_TRACK_MOVED_TO, query))
@@ -541,7 +555,7 @@ def CreatePlaylistMenu(settings):
                                 prompt = L(TEXT_MENU_CREATEPL_ENTER_DESCR_PROMPT)))
     oc.add(PopupDirectoryObject(key = Callback(CreatePLSelectTypeMenu, settings = settings),
                                 title = Locale.LocalStringWithFormat(TEXT_MENU_CREATEPL_SELECT_TYPE, settings[NEW_PL_TYPE])))
-    oc.add(DirectoryObject(key = Callback(CreatePLCreatePlaylist, settings = settings),
+    oc.add(DirectoryObject(key = Callback(CreatePLCreatePlaylist, settings = settings, returnkeyonly = False),
                            title = L(TEXT_MENU_CREATEPL_CREATE_LIST)))  
     return oc
 
@@ -563,23 +577,23 @@ def CreatePLSelectTypeMenu(settings):
 
 
 @route(PREFIX +'/createplaylist', settings=dict)
-def CreatePLCreatePlaylist(settings):
+def CreatePLCreatePlaylist(settings, returnkeyonly):
     if settings[NEW_PL_TITLE] != None:
-        return addPlaylist(settings)
+        return addPlaylist(settings = settings, returnkeyonly = returnkeyonly)
         
     return showMessage(L(TEXT_ERROR_MISSING_TITLE))
 
 
 @route(PREFIX +'/addplaylist', settings=dict)
-def addPlaylist(settings):
-    global allPlaylists
-
-    playlistsElem = LoadGlobalPlaylists()    
+def addPlaylist(settings, returnkeyonly):
+    playlistsElem = LoadOrCreateGlobalPlaylist()
+    allPlaylists = FillGlobalPlaylists(playlistsElem)
+    
     if allPlaylists == None or playlistsElem == None:
         return showMessage('ERROR: Error loading playlist information')
 
     # Generate a new key!
-    playlistKey = getNextPlaylistKey()
+    playlistKey = getNextPlaylistKey(allPlaylists = allPlaylists)
     if playlistKey == None:
         return showMessage(TEXT_ERROR_NO_FREE_KEYS)
     
@@ -597,11 +611,15 @@ def addPlaylist(settings):
     
     # For now, just set the title. Tobe changed to store the settings object in the allPlaylists dict
     allPlaylists[playlistKey] = settings[NEW_PL_TITLE]
-    SaveGlobalPlaylist(playlistsElem = playlistsElem)
+    SaveGlobalPlaylist(allPlaylists = allPlaylists, playlistsElem = playlistsElem)
     
     # Also create the playlist.xml file
     CreateSinglePlaylist(playlistkey = playlistKey, settings = settings)
-    return showMessage(Locale.LocalStringWithFormat(TEXT_MSG_PLAYLIST_CREATED, allPlaylists[playlistKey], playlistKey))
+    if returnkeyonly == True:
+        return showMessage(playlistKey)
+    else:
+        return showMessage(Locale.LocalStringWithFormat(TEXT_MSG_PLAYLIST_CREATED, allPlaylists[playlistKey], playlistKey))
+    return oc
 
 
 #
@@ -612,6 +630,7 @@ def addPlaylist(settings):
 def RenamePlaylistMenu(title):
     oc = ObjectContainer(title2 = title, no_cache = True, no_history = True)
 
+    allPlaylists = LoadGlobalPlaylists()
     for playlistkey in allPlaylists.keys():
         listtitle = allPlaylists[playlistkey]
         oc.add(InputDirectoryObject(key = Callback(RenamePlaylist, playlistkey = playlistkey),
@@ -623,9 +642,10 @@ def RenamePlaylistMenu(title):
 #@route(PREFIX +'/dorenameplaylist')
 def RenamePlaylist(query, playlistkey):
     if query != None and len(query) > 0:
+        allPlaylists = LoadGlobalPlaylists()
         # change title in main list
         allPlaylists[playlistkey] = query
-        SaveGlobalPlaylist()
+        SaveGlobalPlaylist(allPlaylists = allPlaylists)
         
         # Update the playlist.xml file
         playlist = LoadSinglePlaylist(playlistkey)
@@ -644,6 +664,7 @@ def RenamePlaylist(query, playlistkey):
 def DeletePlaylistMenu(title):
     oc = ObjectContainer(title2 = title, no_cache = True, no_history = True)
 
+    allPlaylists = LoadGlobalPlaylists()
     confirmDelete = Prefs[PREFS__CONFIRM_DELETE_PL] == True
     for playlistkey in allPlaylists.keys():
         listtitle = allPlaylists[playlistkey]
@@ -651,7 +672,8 @@ def DeletePlaylistMenu(title):
             oc.add(PopupDirectoryObject(key = Callback(ConfirmDeletePlaylistMenu, playlistkey = playlistkey),
                                         title = listtitle))
         else:
-            oc.add(DirectoryObject(key = Callback(DeletePlaylist, playlistkey = playlistkey), title = listtitle))      
+            oc.add(DirectoryObject(key = Callback(DeletePlaylist, playlistkey = playlistkey),
+                                   title = listtitle))      
     return oc
 
 
@@ -667,12 +689,14 @@ def ConfirmDeletePlaylistMenu(playlistkey):
 
 #@route(PREFIX +'/dodeleteplaylist')
 def DeletePlaylist(playlistkey):
-    if playlistkey != None and playlistkey in allPlaylists.keys():
-        # Delete the playlist file
-        DeleteSinglePlaylist(playlistkey)
-        # Remove the playlist from the list
-        del allPlaylists[playlistkey]
-        SaveGlobalPlaylist()
+    if playlistkey != None:
+        allPlaylists = LoadGlobalPlaylists()
+        if playlistkey in allPlaylists.keys():
+            # Delete the playlist file
+            DeleteSinglePlaylist(playlistkey)
+            # Remove the playlist from the list
+            del allPlaylists[playlistkey]
+            SaveGlobalPlaylist(allPlaylists = allPlaylists)
     return showMessage(L(TEXT_MSG_PLAYLIST_DELETED))
 
     
@@ -687,6 +711,7 @@ def CancelAction(title, mode, params = {}):
     elif mode == CANCEL_MODE_REMOVE_TR or mode == CANCEL_MODE_ASK_ACTION:
         if params != None and 'playlistkey' in params.keys():
             playlistkey = params['playlistkey']
+            allPlaylists = LoadGlobalPlaylists()
             if mode == CANCEL_MODE_REMOVE_TR:
                 return PlaylistEditMenu(title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_REMOVE, allPlaylists[playlistkey]),
                                         key = playlistkey,
@@ -770,14 +795,15 @@ def BrowseTrackPopupMenu(key, tracktitle):
     oc = ObjectContainer(title2 = L(TEXT_MENU_TITLE_TRACK_ACTIONS), no_cache = True)
     oc.title1 = L(TEXT_MENU_TITLE_TRACK_ACTIONS)
     
+    allPlaylists = LoadGlobalPlaylists()
     for playlistkey in allPlaylists.keys():
         listtitle = allPlaylists[playlistkey]
-        oc.add(PopupDirectoryObject(key = Callback(addToPlaylist, playlistkey = playlistkey, key = key, tracktitle = tracktitle),
+        oc.add(PopupDirectoryObject(key = Callback(addToPlaylist, playlistkey = playlistkey, key = key, tracktitle = tracktitle , returnkeyonly = False),
                                     title = listtitle))
     return oc
 
 
-def addToPlaylist(playlistkey, key, tracktitle = ''):   
+def addToPlaylist(playlistkey, key, tracktitle = '', returnkeyonly = False):   
     # use key to get the track information
     pms_url = 'http://%s:%s' %(Prefs[PREFS__PLEXIP], Prefs[PREFS__PLEXPORT])
     trackUrl = pms_url + key + '/'
@@ -799,11 +825,14 @@ def addToPlaylist(playlistkey, key, tracktitle = ''):
     playlist = LoadSinglePlaylist(playlistkey)
     if playlist != None:
         if trackInPlaylist(track.get(ATTR_KEY), playlist) == True:
-            return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_MSG_TRACK_ALREADY_IN_PLAYLIST, tracktitle, key))                
-
+            return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_MSG_TRACK_ALREADY_IN_PLAYLIST, tracktitle, key))
+        
         createTrackElement(playlist = playlist, track = track, media = media, part = part, pms_url = pms_url)
         SaveSinglePlaylist(playlistkey, playlist)
-        return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_MSG_TRACK_ADDED_TO_PLAYLIST, tracktitle, allPlaylists[playlistkey]))
+        if returnkeyonly == True:
+            return showMessage(message_text = track.get(ATTR_KEY))
+            
+        return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_MSG_TRACK_ADDED_TO_PLAYLIST, tracktitle, playlist.get(ATTR_TITLE)))
             
     return showMessage(message_text = L(TEXT_ERROR_TRACK_NOT_ADDED))
 
@@ -833,20 +862,29 @@ def createTrackElement(playlist, track, media, part, pms_url):
 ####################################################################################################
 
 def LoadGlobalPlaylists():
-    global allPlaylists
-    allPlaylists = {}
-
     # Load all existing playlists (name only) for the current user from XML file
     # AND fill the global dict with playlists
-    playlistsElem = LoadGlobalPlaylistsFile(playlistsName = getPlaylistName())
+    playlistsElem = LoadOrCreateGlobalPlaylist()
+    return FillGlobalPlaylists(playlistsElem)
+
+
+def FillGlobalPlaylists(playlistsElem):
+    allPlaylists = {}
     if playlistsElem != None:
         for playlist in playlistsElem.xpath(PL_XPATH_PLAYLIST):
             allPlaylists[playlist.get(ATTR_KEY)] = playlist.get(ATTR_TITLE)           
-        return playlistsElem
-    return CreateGlobalPlaylist()
+    return allPlaylists
 
+		
+def LoadOrCreateGlobalPlaylist():
+    # Load all existing playlists (name only) for the current user from XML file
+    playlistsElem = LoadGlobalPlaylistsFile(playlistsName = getPlaylistName())
+    if playlistsElem == None:
+        playlistsElem = CreateGlobalPlaylist()
+    return playlistsElem
 
-def SaveGlobalPlaylist(playlistsElem = None, playlistsName = ''):
+	
+def SaveGlobalPlaylist(allPlaylists, playlistsElem = None, playlistsName = ''):
     if playlistsName == '':
         playlistsName = getPlaylistName()
     if playlistsElem == None:
@@ -889,7 +927,7 @@ def CreateGlobalPlaylist():
     newplaylists = etree.Element(PLAYLIST_ALL_ROOT)
     if newplaylists != None:
         newplaylists.set(ATTR_VERSION, CURRENT_VERSION_ALL)
-        SaveGlobalPlaylist(playlistsElem = newplaylists)
+        SaveGlobalPlaylist(allPlaylists = allPlaylists, playlistsElem = newplaylists)
     return newplaylists;
 
 
@@ -905,6 +943,7 @@ def LoadSinglePlaylist(playlistkey, createifmissing = True):
             Log.Debug('ERROR: in LoadSinglePlaylist(%s)' % full_filename)
             return None
     if createifmissing == True:
+        allPlaylists = LoadGlobalPlaylists()
         newsettings = { NEW_PL_TITLE : allPlaylists[playlistkey], NEW_PL_TYPE : PL_TYPE_SIMPLE, NEW_PL_DESCRIPTION : ''}
         return CreateSinglePlaylist(playlistkey = playlistkey, settings = newsettings)
     return None
@@ -954,7 +993,7 @@ def getPlaylistName(full_path = True):
     return playlistsName
 
 
-def getNextPlaylistKey():
+def getNextPlaylistKey(allPlaylists):
     if allPlaylists != None:
         nextKey = 1
         while nextKey <= 9999:
@@ -970,7 +1009,7 @@ def getNextPlaylistKey():
 #
 
 @route(PREFIX +'/playlists')
-def allPlaylists():
+def getAllPlaylists():
     oc = ObjectContainer(title1 = 'All playlists', no_cache = True)
 
     playlistsElem = LoadGlobalPlaylistsFile(playlistsName = getPlaylistName())
@@ -978,7 +1017,7 @@ def allPlaylists():
         for playlist in playlistsElem.xpath(PL_XPATH_PLAYLIST):
             key = playlist.get(ATTR_KEY)
             title = playlist.get(ATTR_TITLE)
-            oc.add(DirectoryObject(key = key, title = title))
+            oc.add(DirectoryObject(key = key, title = title, summary = playlist.get(ATTR_DESCR)))
     return oc
 
 
@@ -1006,8 +1045,8 @@ def singlePlaylist(key):
 @route(PREFIX +'/playlists/create')
 def createNewPlaylist(title, pltype, description):    
     if validatePlaylistType(pltype):
-        newsettings = { NEW_PL_TITLE : title, NEW_PL_TYPE : pltype, NEW_PL_DESCRIPTION : description}    
-        return CreatePLCreatePlaylist(settings = newsettings)
+        newsettings = { NEW_PL_TITLE : title, NEW_PL_TYPE : pltype, NEW_PL_DESCRIPTION : description}
+        return CreatePLCreatePlaylist(settings = newsettings, returnkeyonly = True)
     return showMessage('ERROR: Playlist type %s not supported' % pltype)
 
 
@@ -1030,7 +1069,7 @@ def addTrackToPlaylist(playlistkey, key):
     if validatePlaylistKey(playlistkey):
         if not key.startswith('/'):
             key = '/library/metadata/%s' % key
-        return addToPlaylist(playlistkey = playlistkey, key = key)
+        return addToPlaylist(playlistkey = playlistkey, key = key, returnkeyonly = True)
     return showMessage('ERROR: No playlist with key %s found' % playlistkey)
 
 
@@ -1137,6 +1176,7 @@ def validatePlaylistType(pltype):
 
 
 def validatePlaylistKey(key):
+    allPlaylists = LoadGlobalPlaylists()
     return allPlaylists != None and key in allPlaylists.keys()
 
 
