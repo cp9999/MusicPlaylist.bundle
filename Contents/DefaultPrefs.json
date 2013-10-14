@@ -29,4 +29,16 @@
         "type": "bool",
         "default": "True"
     },
+    {
+        "id": "use_ondeck",
+        "label": "Enable 'On deck'",
+        "type": "bool",
+        "default": "False"
+    },
+    {
+        "id": "time_ondeck",
+        "label": "Remove from 'On deck' when percentage played",
+        "type": "text",
+        "default": "50"
+    }
 ]

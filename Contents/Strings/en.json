@@ -14,6 +14,7 @@
   "MENU_ACTION_RENAME_PLAYLIST"          : "Rename playlist",
   "MENU_ACTION_PLAY_MODE_NORMAL"         : "Play normal",
   "MENU_ACTION_PLAY_MODE_SHUFFLED"       : "Play shuffled",
+  "MENU_ACTION_PLAY_MODE_ONDECK"         : "Resume on deck",
   "MENU_ACTION_EDIT_MODE_REMOVE"         : "Mode: Remove track",
   "MENU_ACTION_EDIT_MODE_MOVE"           : "Mode: Repostion track",
   "MENU_ACTION_EDIT_MODE_ASK"            : "Mode: Ask per track",

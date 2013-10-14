@@ -75,7 +75,13 @@ PREFS__PLEXIP = 'plexip'
 PREFS__PLEXPORT = 'plexport'
 PREFS__CONFIRM_DELETE_PL = 'confirm_delete_playlist'
 PREFS__CONFIRM_REMOVE_TR = 'confirm_remove_track'
+PREFS__USE_ONDECK = 'use_ondeck'
+PREFS__ONDECK_PLAYED = 'time_ondeck'
 
+DICT_KEY_PLAYING = 'playing'
+DICT_PLAYING_KEY = 'key'
+DICT_PLAYING_EXPIRE = 'expire'
+DICT_PLAYING_KEY_EXPIRED = 'keyexpired'
 
 # XML 
 PLAYLIST_ALL_ROOT = 'playlists'
@@ -110,6 +116,7 @@ PL_TYPE_SMART = 'SMART'
 PL_TYPES = [PL_TYPE_SIMPLE, PL_TYPE_SMART]
 PL_MODE_PLAY = 'play'
 PL_MODE_PLAY_SHUFFLE = 'playshuffle'
+PL_MODE_PLAY_ONDECK = 'ondeck'
 PL_MODE_DELETE = 'delete'
 PL_MODE_MOVE = 'move'
 PL_MODE_ASK = 'maintain'
@@ -117,6 +124,8 @@ CANCEL_MODE_DELETE_PL = 'delete_playlist'
 CANCEL_MODE_REMOVE_TR = 'remove_track'
 CANCEL_MODE_EDIT_PLAYLIST = 'edit_playlist'
 CANCEL_MODE_ASK_ACTION = 'ask_action'
+FILE_SUFFIX_ONDECK = '[On deck]'
+FILE_SUFFIX_STARTED = '[Started]'
 
 # Track XPath
 PL_XPATH_PLAYLIST = '/playlists/playlist'
@@ -125,6 +134,7 @@ PMS_XPATH_DIRECTORY = '//Directory'
 PMS_XPATH_TRACK = '//Track'
 PMS_XPATH_MEDIA = '//Media'
 PMS_XPATH_PART = '//Part'
+
 
 # Resource stings
 TEXT_MAIN_TITLE = "MAIN_TITLE"
@@ -141,6 +151,7 @@ TEXT_MENU_ACTION_EDIT_PLAYLIST = "MENU_ACTION_EDIT_PLAYLIST"
 TEXT_MENU_ACTION_RENAME_PLAYLIST = "MENU_ACTION_RENAME_PLAYLIST"
 TEXT_MENU_ACTION_PLAY_MODE_NORMAL ="MENU_ACTION_PLAY_MODE_NORMAL"
 TEXT_MENU_ACTION_PLAY_MODE_SHUFFLED = "MENU_ACTION_PLAY_MODE_SHUFFLED"
+TEXT_MENU_ACTION_PLAY_MODE_ONDECK = "MENU_ACTION_PLAY_MODE_ONDECK"
 TEXT_MENU_ACTION_EDIT_MODE_REMOVE = "MENU_ACTION_EDIT_MODE_REMOVE"
 TEXT_MENU_ACTION_EDIT_MODE_MOVE = "MENU_ACTION_EDIT_MODE_MOVE"
 TEXT_MENU_ACTION_EDIT_MODE_ASK = "MENU_ACTION_EDIT_MODE_ASK"
@@ -203,18 +214,21 @@ def Start():
     DirectoryObject.thumb = R(ICON)
     DirectoryObject.art = R(ART)    
     
-    LoadGlobalData()
+    Dict.Reset()
+    global expireThreadRunning
+    expireThreadRunning = False
+
 
 ####################################################################################################
 def ValidatePrefs():
-    return 
+    try:
+        played_percent = int(Prefs[PREFS__ONDECK_PLAYED])
+        if played_percent < 0 or played_percent > 100:
+            return showMessage("Percentage between 0 and 100 requied")
+    except Exception:
+        return showMessage("Remove from 'On deck' must be a number")
+    pass 
 
-def LoadGlobalData():   
-    # TODO: Get the correct full IP addres dynamically (not the localhost one)
-    #       Cannot figure out how to retrieve the full IP address for the PMS server
-    # Network.Address returns the 127.0.0.1 address. Playback using this IP address seems to not work
-    #  (at least not for the windows Plex client). Using the full IP address (e.g. 192.xxx.xxx.xxx) does work
-    pass
   
 ####################################################################################################
 #@handler(PREFIX, NAME)
@@ -247,22 +261,29 @@ def OpenPlaylistMenu(title, playlistkey):
                            title = L(TEXT_MENU_ACTION_PLAY_MODE_NORMAL)))    
 
     oc.add(DirectoryObject(key = Callback(PlaylistMenu, title = title, playlistkey = playlistkey, mode = PL_MODE_PLAY_SHUFFLE),
-                           title = L(TEXT_MENU_ACTION_PLAY_MODE_SHUFFLED)))      
+                           title = L(TEXT_MENU_ACTION_PLAY_MODE_SHUFFLED)))
+
+    if Prefs[PREFS__USE_ONDECK] == True:
+        full_filename = GetPlaylistFileName(playlistkey = playlistkey, suffix = FILE_SUFFIX_ONDECK)
+        if os.path.isfile(full_filename):
+            oc.add(DirectoryObject(key = Callback(PlaylistMenu, title = title, playlistkey = playlistkey, mode = PL_MODE_PLAY_ONDECK),
+                                   title = L(TEXT_MENU_ACTION_PLAY_MODE_ONDECK)))
     return oc    
 
 
 #@route(PREFIX +'/playlistmenu')
 def PlaylistMenu(title, playlistkey, mode):
-    # todo
     oc = ObjectContainer(title2 = title, view_group='List', art = R('icon-default.png'),                         
                          no_cache = True)
-    #if Client.Platform != ClientPlatform.Windows:
     oc.content = ContainerContent.Tracks
     
     # load the playlist
     # This is an: etree.Element XML Element 
     pms_url = 'http://%s:%s' %(Prefs[PREFS__PLEXIP], Prefs[PREFS__PLEXPORT])
-    playlist = LoadSinglePlaylist(playlistkey)
+    suffix = ""
+    if mode == PL_MODE_PLAY_ONDECK:
+        suffix = FILE_SUFFIX_ONDECK
+    playlist = LoadSinglePlaylist(playlistkey = playlistkey, createifmissing = False, suffix = suffix)
     if playlist != None:
         tracks = playlist.xpath(PL_XPATH_TRACK)
         # Load shuffled
@@ -272,6 +293,11 @@ def PlaylistMenu(title, playlistkey, mode):
         for track in tracks:
             track_nr += 1
             oc.add(createTrackObject(track = track, index = track_nr, pms_url = pms_url, playlistkey = playlistkey))
+        if Prefs[PREFS__USE_ONDECK] == True:
+            if mode != PL_MODE_PLAY_ONDECK:
+                SaveSinglePlaylist(playlistkey = playlistkey, playlist = playlist, suffix = FILE_SUFFIX_STARTED)
+            else:
+                DeleteSinglePlaylist(playlistkey = playlistkey, suffix = FILE_SUFFIX_STARTED)
         return oc
                     
     return showMessage(message_text = L(TEXT_MSG_EMPTY_PLAYLIST) )
@@ -312,7 +338,8 @@ def createTrackObject(track, index, pms_url, playlistkey):
                                                                       track_url = partkey,
                                                                       trackkey = key,
                                                                       index = '%d' % index,
-                                                                      playlistkey = playlistkey))] )
+                                                                      playlistkey = playlistkey,
+                                                                      duration = trackObject.duration))] )
     mediaObject.duration = trackObject.duration
     mediaObject.bitrate = attributeAsInt(track.get(ATTR_BITRATE))
     mediaObject.audio_channels = attributeAsInt(track.get(ATTR_AUDIOCHANNELS))
@@ -325,15 +352,119 @@ def createTrackObject(track, index, pms_url, playlistkey):
 
 
 #@indirect
-@route(PREFIX + '/playtrack')
-def playSingleTrack(track_url, trackkey, index, playlistkey):
-    # Keep track of the song
-    # Store track info:
+@route(PREFIX + '/playtrack', duration=int)
+def playSingleTrack(track_url, trackkey, index, playlistkey, duration):
     #   For on deck funcionality
     Log.Debug('playSingleTrack: %s' % track_url)
+    # Load the current OnDeck file
+    if Prefs[PREFS__USE_ONDECK] == True:
+        # Check if this is the first new song played
+        setPlaying(playlistkey = playlistkey, trackkey = trackkey, duration = duration)
+        global expireThreadRunning
+        if expireThreadRunning == False:
+            expireThreadRunning = True
+            Thread.CreateTimer(interval = 10, f = updateOnDeck)
+            
     return Redirect(track_url)
     pass
 
+
+def setPlaying(playlistkey, trackkey, duration):
+    user = getUser()
+    if user != None and len(user) > 0:        
+        playing = Dict[DICT_KEY_PLAYING]
+        if playing == None:
+            playing = {}
+        if user in playing.keys():
+            user_playing = playing[user]
+        else:
+            user_playing = {}
+        if playlistkey in user_playing.keys():
+            # Check if the current key is already expired 
+            now_playing = user_playing[playlistkey]
+            if Datetime.Now() >= now_playing[DICT_PLAYING_EXPIRE]:
+                if DICT_PLAYING_KEY_EXPIRED in now_playing.keys():
+                    expiredkeys = now_playing[DICT_PLAYING_KEY_EXPIRED]
+                    expiredkeys.append(now_playing[DICT_PLAYING_KEY])
+                else:
+                    expiredkeys = [now_playing[DICT_PLAYING_KEY]]                
+                now_playing[DICT_PLAYING_KEY_EXPIRED] = expiredkeys
+        else:
+            now_playing = {}                
+        now_playing[DICT_PLAYING_KEY] = trackkey
+        # convert duration to seconds
+        duration = duration // 1000
+        try:
+            played_percent = int(Prefs[PREFS__ONDECK_PLAYED])
+            if played_percent > 0:
+                if played_percent < 100:
+                    duration =  (duration * played_percent) // 100
+            else:
+                duration = 1 
+            now_playing[DICT_PLAYING_EXPIRE] = Datetime.Now() + Datetime.Delta(seconds = duration)
+            Log.Debug("Create now playing %s " % now_playing[DICT_PLAYING_KEY])
+            user_playing[playlistkey] = now_playing
+            playing[user] = user_playing
+            Dict[DICT_KEY_PLAYING] = playing
+            Dict.Save()
+        except Exception:
+            pass
+
+
+def updateOnDeck():
+    # This is executed as a new Thread.
+    # Check if this is the first new song played
+    global expireThreadRunning
+    anything_playing = False
+    playing = Dict[DICT_KEY_PLAYING]
+    if playing != None:        
+        for user in playing.keys():
+            user_playing = playing[user]
+            for playlistkey in user_playing.keys():
+                now_playing = user_playing[playlistkey]
+                    
+                # Check for already expired tracks
+                if DICT_PLAYING_KEY_EXPIRED in now_playing.keys():
+                    expiredkeys = now_playing[DICT_PLAYING_KEY_EXPIRED]
+                else:
+                    expiredkeys = []
+                current_is_expired = Datetime.Now() >= now_playing[DICT_PLAYING_EXPIRE]
+                
+                if current_is_expired:
+                    expiredkeys.append(now_playing[DICT_PLAYING_KEY])
+                else:
+                    anything_playing = True
+                    
+                if len(expiredkeys) > 0: 
+                    #This song is playing long enough to remove it from the OnDeck                            
+                    playlist = LoadSinglePlaylist(playlistkey = playlistkey, createifmissing = False, suffix = FILE_SUFFIX_STARTED)
+                    if playlist == None:
+                        # No newly started file present yet, check for existing OnDeck
+                        playlist = LoadSinglePlaylist(playlistkey = playlistkey, createifmissing = False, suffix = FILE_SUFFIX_ONDECK)
+                    else:
+                        DeleteSinglePlaylist(playlistkey = playlistkey, suffix = FILE_SUFFIX_STARTED)
+                    if playlist != None:
+                        for key in expiredkeys:                               
+                            Log.Debug("Remove key from OnDeck: %s" % key)
+                            tracks = playlist.xpath('%s[@key="%s"]' % (PL_XPATH_TRACK, key))
+                            for track in tracks:
+                                playlist.remove(track)
+                        if current_is_expired:
+                            del user_playing[playlistkey]
+                        else:
+                            del now_playing[DICT_PLAYING_KEY_EXPIRED]
+                        # Save to OnDeck
+                        SaveSinglePlaylist(playlistkey = playlistkey, playlist = playlist, suffix = FILE_SUFFIX_ONDECK)
+            if len(user_playing) == 0:
+                del playing[user]
+        Dict.Save()
+        
+    if anything_playing == True:
+        Thread.CreateTimer(interval = 10, f = updateOnDeck)
+    else:
+        expireThreadRunning = False
+    pass
+        
 
 ####################################################################################################
 # Playlist maintenance
@@ -411,7 +542,7 @@ def PlaylistEditMenu(title, key, mode, replace_parent = True):
     
     # load the playlist
     # This is an: etree.Element XML Element 
-    playlist = LoadSinglePlaylist(key)
+    playlist = LoadSinglePlaylist(playlistkey = key)
     if playlist != None:
         track_nr = 0
         tracks = playlist.xpath(PL_XPATH_TRACK)
@@ -485,7 +616,7 @@ def AskActionTrackMenu(playlistkey, key, tracktitle, trackindex):
 @indirect
 def removeFromPlaylist(playlistkey, key, tracktitle, mode):
     Log.Debug('removing track from  playlist')
-    playlist = LoadSinglePlaylist(playlistkey)
+    playlist = LoadSinglePlaylist(playlistkey = playlistkey, createifmissing = False)
     if playlist != None:
         tracks = playlist.xpath('%s[@key="%s"]' % (PL_XPATH_TRACK, key))
         for track in tracks:
@@ -512,7 +643,7 @@ def moveTrack(query, playlistkey, trackkey, mode):
         new_position = int(query)
         if  new_position > 0:
             # Let's Move the track
-            playlist = LoadSinglePlaylist(playlistkey)
+            playlist = LoadSinglePlaylist(playlistkey = playlistkey, createifmissing = False)
             if playlist != None:
                 # Find the element with given trackkey
                 track = playlist.xpath('%s[@key="%s"]' % (PL_XPATH_TRACK, trackkey))[0]
@@ -648,7 +779,7 @@ def RenamePlaylist(query, playlistkey):
         SaveGlobalPlaylist(allPlaylists = allPlaylists)
         
         # Update the playlist.xml file
-        playlist = LoadSinglePlaylist(playlistkey)
+        playlist = LoadSinglePlaylist(playlistkey = playlistkey, createifmissing = False)
         if playlist != None:
             playlist.set(ATTR_TITLE, query)
             SaveSinglePlaylist(playlistkey, playlist)
@@ -693,7 +824,7 @@ def DeletePlaylist(playlistkey):
         allPlaylists = LoadGlobalPlaylists()
         if playlistkey in allPlaylists.keys():
             # Delete the playlist file
-            DeleteSinglePlaylist(playlistkey)
+            DeleteSinglePlaylist(playlistkey = playlistkey)
             # Remove the playlist from the list
             del allPlaylists[playlistkey]
             SaveGlobalPlaylist(allPlaylists = allPlaylists)
@@ -822,7 +953,7 @@ def addToPlaylist(playlistkey, key, tracktitle = '', returnkeyonly = False):
     if part == None:
         return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_ERROR_NO_TRACK_DATA, tracktitle, key))                
 
-    playlist = LoadSinglePlaylist(playlistkey)
+    playlist = LoadSinglePlaylist(playlistkey = playlistkey)
     if playlist != None:
         if trackInPlaylist(track.get(ATTR_KEY), playlist) == True:
             return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_MSG_TRACK_ALREADY_IN_PLAYLIST, tracktitle, key))
@@ -931,8 +1062,8 @@ def CreateGlobalPlaylist():
     return newplaylists;
 
 
-def LoadSinglePlaylist(playlistkey, createifmissing = True):   
-    full_filename = GetPlaylistFileName(playlistkey)
+def LoadSinglePlaylist(playlistkey, createifmissing = True, suffix = ""):   
+    full_filename = GetPlaylistFileName(playlistkey = playlistkey, suffix = suffix)
     Log.Debug('LoadSinglePlaylist: %s' % full_filename)
     if os.path.isfile(full_filename):
         try:
@@ -942,15 +1073,15 @@ def LoadSinglePlaylist(playlistkey, createifmissing = True):
         except:            
             Log.Debug('ERROR: in LoadSinglePlaylist(%s)' % full_filename)
             return None
-    if createifmissing == True:
+    if createifmissing == True and ondeck == False:
         allPlaylists = LoadGlobalPlaylists()
         newsettings = { NEW_PL_TITLE : allPlaylists[playlistkey], NEW_PL_TYPE : PL_TYPE_SIMPLE, NEW_PL_DESCRIPTION : ''}
         return CreateSinglePlaylist(playlistkey = playlistkey, settings = newsettings)
     return None
 
 
-def SaveSinglePlaylist(playlistkey, playlist):
-    full_filename = GetPlaylistFileName(playlistkey)
+def SaveSinglePlaylist(playlistkey, playlist, suffix = ""):
+    full_filename = GetPlaylistFileName(playlistkey = playlistkey, suffix = suffix)
     Log.Debug('SaveSinglePlaylist: %s' % full_filename)
     if etree.iselement(playlist):
         try:
@@ -974,8 +1105,8 @@ def CreateSinglePlaylist(playlistkey, settings = {}):
     return newplaylist;
 
 
-def DeleteSinglePlaylist(playlistkey):   
-    full_filename = GetPlaylistFileName(playlistkey)
+def DeleteSinglePlaylist(playlistkey, suffix = ""):   
+    full_filename = GetPlaylistFileName(playlistkey = playlistkey, suffix = suffix)
     Log.Debug('DeleteSinglePlaylist: %s' % full_filename)
     if os.path.isfile(full_filename):
         try:
@@ -986,7 +1117,7 @@ def DeleteSinglePlaylist(playlistkey):
 
 
 def getPlaylistName(full_path = True):
-    username = Prefs[PREFS__USERNAME]
+    username = getUser()
     playlistsName = '%s_allPlaylists.xml' % username
     if full_path == True:
         return Core.storage.join_path(GetSupportPath('Data', 'DataItems'), playlistsName)        
@@ -1230,9 +1361,11 @@ def showMessage(message_text):
 def GetSupportPath(directory, subdirectory = None):
     return Core.storage.join_path(Core.app_support_path, Core.config.plugin_support_dir_name, directory, PLUGIN_DIR, subdirectory)
 
+def getUser():
+    return Prefs[PREFS__USERNAME]
 
-def GetPlaylistFileName(playlistkey):
-    playlist_filename = '%s - %s.xml' % (Prefs[PREFS__USERNAME], playlistkey)
+def GetPlaylistFileName(playlistkey, suffix = ""):
+    playlist_filename = '%s - %s%s.xml' % (getUser(), playlistkey, suffix)
     return Core.storage.join_path(GetSupportPath('Data', 'DataItems'), playlist_filename)
 
 
