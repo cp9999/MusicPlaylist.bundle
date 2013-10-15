@@ -237,7 +237,7 @@ def MainMenu():
 
     allPlaylists = LoadGlobalPlaylists()
     for playlistkey in allPlaylists.keys():
-        listtitle = allPlaylists[playlistkey]
+        listtitle = playlistTitle(playlist_dict = allPlaylists[playlistkey], include_duration = True)
         oc.add(PopupDirectoryObject(key = Callback(OpenPlaylistMenu, title = listtitle, playlistkey = playlistkey),
                                     title = listtitle))
       
@@ -337,7 +337,7 @@ def createTrackObject(track, index, pms_url, playlistkey):
         mediaObject = MediaObject( parts = [PartObject(key = Callback(playSingleTrack,
                                                                       track_url = partkey,
                                                                       trackkey = key,
-                                                                      index = '%d' % index,
+                                                                      index = str(index),
                                                                       playlistkey = playlistkey,
                                                                       duration = trackObject.duration))] )
     mediaObject.duration = trackObject.duration
@@ -454,7 +454,12 @@ def updateOnDeck():
                         else:
                             del now_playing[DICT_PLAYING_KEY_EXPIRED]
                         # Save to OnDeck
-                        SaveSinglePlaylist(playlistkey = playlistkey, playlist = playlist, suffix = FILE_SUFFIX_ONDECK)
+                        tracks = playlist.xpath('%s' % PL_XPATH_TRACK)
+                        if len(tracks) > 0:
+                            SaveSinglePlaylist(playlistkey = playlistkey, playlist = playlist, suffix = FILE_SUFFIX_ONDECK)
+                        else:
+                            DeleteSinglePlaylist(playlistkey = playlistkey, suffix = FILE_SUFFIX_ONDECK)
+                            
             if len(user_playing) == 0:
                 del playing[user]
         Dict.Save()
@@ -498,7 +503,7 @@ def MaintainTracksMenu(title):
 
     allPlaylists = LoadGlobalPlaylists()
     for playlistkey in allPlaylists.keys():
-        listtitle = allPlaylists[playlistkey]
+        listtitle = playlistTitle(playlist_dict = allPlaylists[playlistkey], include_duration = True)
         oc.add(PopupDirectoryObject(key = Callback(SelectModeTrackMenu, playlistkey = playlistkey, listtitle = listtitle),
                                     title = listtitle))
     return oc
@@ -624,6 +629,7 @@ def removeFromPlaylist(playlistkey, key, tracktitle, mode):
                 tracktitle = track.get(ATTR_TITLE)
             playlist.remove(track)
         SaveSinglePlaylist(playlistkey, playlist)
+        UpdateGlobalPlaylists(playlistkey = playlistkey, playlist = playlist)
         
         if mode == PL_MODE_ASK:
             # Directly return to the playlist
@@ -741,7 +747,7 @@ def addPlaylist(settings, returnkeyonly):
     elNewPlaylist.set(ATTR_DESCR, settings[NEW_PL_DESCRIPTION])
     
     # For now, just set the title. Tobe changed to store the settings object in the allPlaylists dict
-    allPlaylists[playlistKey] = settings[NEW_PL_TITLE]
+    allPlaylists[playlistKey] = { ATTR_TITLE : settings[NEW_PL_TITLE], ATTR_DURATION : 0}
     SaveGlobalPlaylist(allPlaylists = allPlaylists, playlistsElem = playlistsElem)
     
     # Also create the playlist.xml file
@@ -749,7 +755,9 @@ def addPlaylist(settings, returnkeyonly):
     if returnkeyonly == True:
         return showMessage(playlistKey)
     else:
-        return showMessage(Locale.LocalStringWithFormat(TEXT_MSG_PLAYLIST_CREATED, allPlaylists[playlistKey], playlistKey))
+        return showMessage(Locale.LocalStringWithFormat(TEXT_MSG_PLAYLIST_CREATED,
+                                                        playlistTitle(playlist_dict = allPlaylists[playlistkey]),
+                                                        playlistKey))
     return oc
 
 
@@ -763,7 +771,7 @@ def RenamePlaylistMenu(title):
 
     allPlaylists = LoadGlobalPlaylists()
     for playlistkey in allPlaylists.keys():
-        listtitle = allPlaylists[playlistkey]
+        listtitle = playlistTitle(playlist_dict = allPlaylists[playlistkey])
         oc.add(InputDirectoryObject(key = Callback(RenamePlaylist, playlistkey = playlistkey),
                                     title = listtitle,
                                     prompt = L(TEXT_MENU_RENAMEPL_PROMPT)))      
@@ -775,7 +783,7 @@ def RenamePlaylist(query, playlistkey):
     if query != None and len(query) > 0:
         allPlaylists = LoadGlobalPlaylists()
         # change title in main list
-        allPlaylists[playlistkey] = query
+        allPlaylists[playlistkey][ATTR_TITLE] = query
         SaveGlobalPlaylist(allPlaylists = allPlaylists)
         
         # Update the playlist.xml file
@@ -798,7 +806,7 @@ def DeletePlaylistMenu(title):
     allPlaylists = LoadGlobalPlaylists()
     confirmDelete = Prefs[PREFS__CONFIRM_DELETE_PL] == True
     for playlistkey in allPlaylists.keys():
-        listtitle = allPlaylists[playlistkey]
+        listtitle = playlistTitle(playlist_dict = allPlaylists[playlistkey])
         if confirmDelete:
             oc.add(PopupDirectoryObject(key = Callback(ConfirmDeletePlaylistMenu, playlistkey = playlistkey),
                                         title = listtitle))
@@ -844,11 +852,13 @@ def CancelAction(title, mode, params = {}):
             playlistkey = params['playlistkey']
             allPlaylists = LoadGlobalPlaylists()
             if mode == CANCEL_MODE_REMOVE_TR:
-                return PlaylistEditMenu(title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_REMOVE, allPlaylists[playlistkey]),
+                return PlaylistEditMenu(title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_REMOVE,
+                                                                             playlistTitle(playlist_dict = allPlaylists[playlistkey])),
                                         key = playlistkey,
                                         mode = PL_MODE_DELETE)
             else:
-                return PlaylistEditMenu(title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_ASK, allPlaylists[playlistkey]),
+                return PlaylistEditMenu(title = Locale.LocalStringWithFormat(TEXT_MENU_TITLE_TRACK_ASK,
+                                                                             playlistTitle(playlist_dict = allPlaylists[playlistkey])),
                                         key = playlistkey,
                                         mode = PL_MODE_ASK)
     elif mode == CANCEL_MODE_EDIT_PLAYLIST:
@@ -928,7 +938,7 @@ def BrowseTrackPopupMenu(key, tracktitle):
     
     allPlaylists = LoadGlobalPlaylists()
     for playlistkey in allPlaylists.keys():
-        listtitle = allPlaylists[playlistkey]
+        listtitle = playlistTitle(playlist_dict = allPlaylists[playlistkey], include_duration = True)
         oc.add(PopupDirectoryObject(key = Callback(addToPlaylist, playlistkey = playlistkey, key = key, tracktitle = tracktitle , returnkeyonly = False),
                                     title = listtitle))
     return oc
@@ -960,6 +970,8 @@ def addToPlaylist(playlistkey, key, tracktitle = '', returnkeyonly = False):
         
         createTrackElement(playlist = playlist, track = track, media = media, part = part, pms_url = pms_url)
         SaveSinglePlaylist(playlistkey, playlist)
+        UpdateGlobalPlaylists(playlistkey = playlistkey, playlist = playlist)
+        
         if returnkeyonly == True:
             return showMessage(message_text = track.get(ATTR_KEY))
             
@@ -1003,7 +1015,8 @@ def FillGlobalPlaylists(playlistsElem):
     allPlaylists = {}
     if playlistsElem != None:
         for playlist in playlistsElem.xpath(PL_XPATH_PLAYLIST):
-            allPlaylists[playlist.get(ATTR_KEY)] = playlist.get(ATTR_TITLE)           
+            allPlaylists[playlist.get(ATTR_KEY)] = { ATTR_TITLE : playlist.get(ATTR_TITLE),
+                                                    ATTR_DURATION : attributeAsInt(playlist.get(ATTR_DURATION), 0)}
     return allPlaylists
 
 		
@@ -1027,7 +1040,8 @@ def SaveGlobalPlaylist(allPlaylists, playlistsElem = None, playlistsName = ''):
                 playlistKey = playlist.get(ATTR_KEY)
                 if playlistKey in allPlaylists.keys():
                     # Update the title
-                    playlist.set(ATTR_TITLE, allPlaylists[playlistKey])
+                    playlist.set(ATTR_TITLE, allPlaylists[playlistKey][ATTR_TITLE])
+                    playlist.set(ATTR_DURATION, str(allPlaylists[playlistKey][ATTR_DURATION]))
                 else:
                     # this playlist no longer in the global list: remove from the xml
                     playlist.getparent().remove(playlist)
@@ -1062,6 +1076,16 @@ def CreateGlobalPlaylist():
     return newplaylists;
 
 
+def UpdateGlobalPlaylists(playlistkey, playlist):
+    if playlist != None:
+        duration = attributeAsInt(playlist.get(ATTR_DURATION), 0)
+        allPlaylists = LoadGlobalPlaylists()
+        if playlistkey in allPlaylists.keys():
+            allPlaylists[playlistkey][ATTR_DURATION] = duration
+            SaveGlobalPlaylist(allPlaylists)
+    pass
+
+
 def LoadSinglePlaylist(playlistkey, createifmissing = True, suffix = ""):   
     full_filename = GetPlaylistFileName(playlistkey = playlistkey, suffix = suffix)
     Log.Debug('LoadSinglePlaylist: %s' % full_filename)
@@ -1085,6 +1109,13 @@ def SaveSinglePlaylist(playlistkey, playlist, suffix = ""):
     Log.Debug('SaveSinglePlaylist: %s' % full_filename)
     if etree.iselement(playlist):
         try:
+            duration = 0
+            tracks = playlist.xpath('%s' % PL_XPATH_TRACK)
+            for track in tracks:
+                duration = duration + attributeAsInt(track.get(ATTR_DURATION), 0)
+            # Store duration in seconds
+            duration = duration // 1000
+            playlist.set(ATTR_DURATION, str(duration))
             playlist.set(ATTR_VERSION, CURRENT_VERSION_SINGLE)
             etree.ElementTree(playlist).write(full_filename, pretty_print = True)
         except Exception:
@@ -1148,7 +1179,8 @@ def getAllPlaylists():
         for playlist in playlistsElem.xpath(PL_XPATH_PLAYLIST):
             key = playlist.get(ATTR_KEY)
             title = playlist.get(ATTR_TITLE)
-            oc.add(DirectoryObject(key = key, title = title, summary = playlist.get(ATTR_DESCR)))
+            duration = attributeAsInt(playlist.get(ATTR_DURATION))
+            oc.add(DirectoryObject(key = key, title = title, summary = playlist.get(ATTR_DESCR), duration = duration))
     return oc
 
 
@@ -1352,6 +1384,16 @@ def trackInPlaylist(trackkey, playlist):
         if track != None and len(track) > 0:
             return True
     return False
+
+
+def playlistTitle(playlist_dict, include_duration = False):
+    if include_duration == True:
+        duration = playlist_dict[ATTR_DURATION]
+        hours = duration // 3600
+        minutes = (duration % 3600) // 60
+        seconds = duration % 60
+        return '[%02d:%02d:%02d] %s' % (hours, minutes, seconds, playlist_dict[ATTR_TITLE])
+    return playlist_dict[ATTR_TITLE]
 
 
 def showMessage(message_text):
