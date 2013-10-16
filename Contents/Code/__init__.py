@@ -83,6 +83,13 @@ DICT_PLAYING_KEY = 'key'
 DICT_PLAYING_EXPIRE = 'expire'
 DICT_PLAYING_KEY_EXPIRED = 'keyexpired'
 
+#Request Header
+REQUEST_HEADER_CLIENTID = 'X-Plex-Client-Identifier'
+# Client / User information
+CLIENT_UNKNOWN = 'Unknown'
+CLIENT_USER_LIST = 'client_user_list'
+DICT_KEY_CLIENT_LIST = CLIENT_USER_LIST
+
 # XML 
 PLAYLIST_ALL_ROOT = 'playlists'
 PLAYLIST_ROOT = 'playlist'
@@ -127,6 +134,8 @@ CANCEL_MODE_ASK_ACTION = 'ask_action'
 FILE_SUFFIX_ONDECK = '[On deck]'
 FILE_SUFFIX_STARTED = '[Started]'
 
+FILE_ALLPLAYLIST_SUFFIX = '_allPlaylists.xml'
+
 # Track XPath
 PL_XPATH_PLAYLIST = '/playlists/playlist'
 PL_XPATH_TRACK = '/playlist/Track'
@@ -149,12 +158,15 @@ TEXT_MENU_ACTION_MOVE_TRACK = "MENU_ACTION_MOVE_TRACK"
 TEXT_MENU_ACTION_DELETE_PLAYLIST = "MENU_ACTION_DELETE_PLAYLIST"
 TEXT_MENU_ACTION_EDIT_PLAYLIST = "MENU_ACTION_EDIT_PLAYLIST"
 TEXT_MENU_ACTION_RENAME_PLAYLIST = "MENU_ACTION_RENAME_PLAYLIST"
+TEXT_MENU_ACTION_SET_CLIENT_USER = "MENU_ACTION_SET_CLIENT_USER"
+TEXT_MENU_SET_CLIENT_USER_PROMPT = "MENU_SET_CLIENT_USER_PROMPT"
 TEXT_MENU_ACTION_PLAY_MODE_NORMAL ="MENU_ACTION_PLAY_MODE_NORMAL"
 TEXT_MENU_ACTION_PLAY_MODE_SHUFFLED = "MENU_ACTION_PLAY_MODE_SHUFFLED"
 TEXT_MENU_ACTION_PLAY_MODE_ONDECK = "MENU_ACTION_PLAY_MODE_ONDECK"
 TEXT_MENU_ACTION_EDIT_MODE_REMOVE = "MENU_ACTION_EDIT_MODE_REMOVE"
 TEXT_MENU_ACTION_EDIT_MODE_MOVE = "MENU_ACTION_EDIT_MODE_MOVE"
 TEXT_MENU_ACTION_EDIT_MODE_ASK = "MENU_ACTION_EDIT_MODE_ASK"
+TEXT_MENU_TITLE_SET_CLIENT_USER = "MENU_TITLE_SET_CLIENT_USER"
 TEXT_MENU_TITLE_TRACK_ACTIONS = "MENU_TITLE_TRACK_ACTIONS"
 TEXT_MENU_TITLE_TRACK_REMOVE = "MENU_TITLE_TRACK_REMOVE"
 TEXT_MENU_TITLE_TRACK_MOVE = "MENU_TITLE_TRACK_MOVE"
@@ -215,6 +227,8 @@ def Start():
     DirectoryObject.art = R(ART)    
     
     Dict.Reset()
+    LoadGlobalUsers()
+    
     global expireThreadRunning
     expireThreadRunning = False
 
@@ -234,7 +248,8 @@ def ValidatePrefs():
 #@handler(PREFIX, NAME)
 def MainMenu():   
     oc = ObjectContainer(no_cache = True)
-
+    oc.title1 = L(TEXT_MAIN_TITLE) + '[%s]' % getUser()
+        
     allPlaylists = LoadGlobalPlaylists()
     for playlistkey in allPlaylists.keys():
         listtitle = playlistTitle(playlist_dict = allPlaylists[playlistkey], include_duration = True)
@@ -489,6 +504,9 @@ def MaintenanceMenu(title):
     oc.add(DirectoryObject(key = Callback(CreatePlaylistMenu, settings = newsetting), title = L(TEXT_MENU_ACTION_CREATE_PLAYLIST)))  
     if playlists_present:
         oc.add(DirectoryObject(key = Callback(DeletePlaylistMenu, title = L(TEXT_MENU_ACTION_DELETE_PLAYLIST)), title = L(TEXT_MENU_ACTION_DELETE_PLAYLIST)))
+    client_id = getClientIdentifier()
+    if client_id != CLIENT_UNKNOWN and client_id != None:
+        oc.add(DirectoryObject(key = Callback(SelectUserMenu), title = L(TEXT_MENU_TITLE_SET_CLIENT_USER)))
     
     return oc
 
@@ -756,7 +774,7 @@ def addPlaylist(settings, returnkeyonly):
         return showMessage(playlistKey)
     else:
         return showMessage(Locale.LocalStringWithFormat(TEXT_MSG_PLAYLIST_CREATED,
-                                                        playlistTitle(playlist_dict = allPlaylists[playlistkey]),
+                                                        playlistTitle(playlist_dict = allPlaylists[playlistKey]),
                                                         playlistKey))
     return oc
 
@@ -838,7 +856,29 @@ def DeletePlaylist(playlistkey):
             SaveGlobalPlaylist(allPlaylists = allPlaylists)
     return showMessage(L(TEXT_MSG_PLAYLIST_DELETED))
 
+
+#
+# Default User selection
+#
+def SelectUserMenu():
+    oc = ObjectContainer(title2 = L(TEXT_MENU_TITLE_SET_CLIENT_USER), no_cache = True, no_history = True)
+    users = getAllUsers()
+    for user in users:
+        oc.add(DirectoryObject(key = Callback(defaultUserForClient, query = user), title = user))      
     
+    oc.add(InputDirectoryObject(key = Callback(defaultUserForClient),
+                                title = L(TEXT_MENU_ACTION_SET_CLIENT_USER),
+                                prompt = L(TEXT_MENU_SET_CLIENT_USER_PROMPT)))
+            
+    return oc
+
+
+def defaultUserForClient(query):    
+    if query != getUser():
+        SetUserForCurrentClient(query)
+        return MainMenu()
+    return showMessage('User not changed')
+
 #
 # Helper callback for cancel
 #
@@ -1001,6 +1041,88 @@ def createTrackElement(playlist, track, media, part, pms_url):
 
 
 ####################################################################################################
+# Multi user
+####################################################################################################
+
+
+def LoadGlobalUsers():
+    if Data.Exists(CLIENT_USER_LIST):
+        try:
+            client_users = Data.LoadObject(CLIENT_USER_LIST)
+            if client_users != None:
+                Dict[DICT_KEY_CLIENT_LIST] = client_users
+                return
+        except Exception:
+            pass
+        
+    Dict[DICT_KEY_CLIENT_LIST] = {}    
+    pass
+
+
+def SaveGlobalUsers():
+    try:
+        client_users = Dict[DICT_KEY_CLIENT_LIST]
+        if client_users != None:
+            Data.SaveObject(item = CLIENT_USER_LIST, obj = client_users)
+    except Exception:
+        pass
+
+
+def SetUserForCurrentClient(user):
+    setUserForClient(client_id = getClientIdentifier(), user = user)
+    
+
+def setUserForClient(client_id, user):
+    if client_id != None and client_id != CLIENT_UNKNOWN and len(user) > 0:
+        client_users = Dict[DICT_KEY_CLIENT_LIST]
+        if client_users == None:
+            client_users = {}
+        client_users[client_id] = user
+        Dict[DICT_KEY_CLIENT_LIST] = client_users
+        SaveGlobalUsers()
+
+
+def getUser():
+    return getUserForClient()
+
+
+def getUserForClient():
+    try:
+        client_id = getClientIdentifier()
+        if client_id != CLIENT_UNKNOWN:
+            client_users = Dict[DICT_KEY_CLIENT_LIST]
+            if client_users != None and client_id in client_users.keys():
+                if client_users[client_id] != None:
+                    return client_users[client_id]
+    except Exception:
+        pass    
+    return Prefs[PREFS__USERNAME]
+
+
+def getClientIdentifier():
+    if REQUEST_HEADER_CLIENTID in Request.Headers.keys():
+        return Request.Headers[REQUEST_HEADER_CLIENTID]
+    return CLIENT_UNKNOWN
+
+
+def getAllUsers():
+    users_list = []
+    def_user = Prefs[PREFS__USERNAME]
+    try:
+        path = GetSupportPath('Data', 'DataItems')
+        user_files = [f for f in os.listdir(path) if f.endswith(FILE_ALLPLAYLIST_SUFFIX)]
+        for file in user_files:
+            user = file[:-len(FILE_ALLPLAYLIST_SUFFIX)]
+            users_list.append(user)
+            if def_user != None and user == def_user:
+                def_user = None
+    except Exception:
+        pass
+    if def_user != None:
+        users_list.append(def_user)
+    return users_list
+
+####################################################################################################
 # Load / Save playlist
 ####################################################################################################
 
@@ -1114,6 +1236,7 @@ def SaveSinglePlaylist(playlistkey, playlist, suffix = ""):
             for track in tracks:
                 duration = duration + attributeAsInt(track.get(ATTR_DURATION), 0)
             # Store duration in seconds
+            Log.Debug("Total duration = %d" % duration)
             duration = duration // 1000
             playlist.set(ATTR_DURATION, str(duration))
             playlist.set(ATTR_VERSION, CURRENT_VERSION_SINGLE)
@@ -1149,7 +1272,7 @@ def DeleteSinglePlaylist(playlistkey, suffix = ""):
 
 def getPlaylistName(full_path = True):
     username = getUser()
-    playlistsName = '%s_allPlaylists.xml' % username
+    playlistsName = '%s%s' % (username, FILE_ALLPLAYLIST_SUFFIX)
     if full_path == True:
         return Core.storage.join_path(GetSupportPath('Data', 'DataItems'), playlistsName)        
     return playlistsName
@@ -1173,7 +1296,7 @@ def getNextPlaylistKey(allPlaylists):
 @route(PREFIX +'/playlists')
 def getAllPlaylists():
     oc = ObjectContainer(title1 = 'All playlists', no_cache = True)
-
+    
     playlistsElem = LoadGlobalPlaylistsFile(playlistsName = getPlaylistName())
     if playlistsElem != None:
         for playlist in playlistsElem.xpath(PL_XPATH_PLAYLIST):
@@ -1334,6 +1457,12 @@ def addSingleTrackToPlaylist(playlist, key):
 # Generic helper functions
 ####################################################################################################
 
+def logRequest():
+    for header in Request.Headers.keys():
+        Log.Debug('REQUEST.HEADER: %s=%s' % (header, Request.Headers[header]))
+    pass
+    
+
 def validatePlaylistType(pltype):
     return pltype in PL_TYPES
 
@@ -1403,11 +1532,8 @@ def showMessage(message_text):
 def GetSupportPath(directory, subdirectory = None):
     return Core.storage.join_path(Core.app_support_path, Core.config.plugin_support_dir_name, directory, PLUGIN_DIR, subdirectory)
 
-def getUser():
-    return Prefs[PREFS__USERNAME]
 
 def GetPlaylistFileName(playlistkey, suffix = ""):
     playlist_filename = '%s - %s%s.xml' % (getUser(), playlistkey, suffix)
     return Core.storage.join_path(GetSupportPath('Data', 'DataItems'), playlist_filename)
-
 

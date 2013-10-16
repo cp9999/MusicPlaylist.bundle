@@ -1,7 +1,7 @@
 [
     {
         "id": "username",
-        "label": "User name", 
+        "label": "Default user name", 
         "type": "text",
         "default": "me"
     },
