@@ -1050,6 +1050,12 @@ def LoadGlobalUsers():
         try:
             client_users = Data.LoadObject(CLIENT_USER_LIST)
             if client_users != None:
+                users = getAllUsers()
+                for client_id in client_users.keys():
+                    if client_users[client_id] in users:
+                        pass
+                    else:
+                        del client_users[client_id]
                 Dict[DICT_KEY_CLIENT_LIST] = client_users
                 return
         except Exception:
@@ -1262,12 +1268,17 @@ def CreateSinglePlaylist(playlistkey, settings = {}):
 def DeleteSinglePlaylist(playlistkey, suffix = ""):   
     full_filename = GetPlaylistFileName(playlistkey = playlistkey, suffix = suffix)
     Log.Debug('DeleteSinglePlaylist: %s' % full_filename)
-    if os.path.isfile(full_filename):
+    DeleteSingleFile(filename = full_filename)
+    pass
+
+
+def DeleteSingleFile(filename):
+    if os.path.isfile(filename):
         try:
-            os.remove(full_filename)
+            os.remove(filename)
         except:
             pass
-    pass
+    pass    
 
 
 def getPlaylistName(full_path = True):
@@ -1293,10 +1304,59 @@ def getNextPlaylistKey(allPlaylists):
 # Methods to provide easy access through URL. Not called directly by the plugin
 #
 
+
+@route(PREFIX +'/users')
+def getUserList():
+    oc = ObjectContainer(title1 = 'All users', no_cache = True)
+    
+    user_list = getAllUsers()
+    for user in user_list:
+        oc.add(DirectoryObject(key = user, title = user))
+    return oc
+
+
+@route(PREFIX +'/users/current')
+def getCurrentUser():
+    oc = ObjectContainer(title1 = 'All users', no_cache = True)
+    
+    user = getUserForClient()
+    oc.add(DirectoryObject(key = user, title = getClientIdentifier()))
+    return oc
+
+
+@route(PREFIX +'/users/set')
+def setCurrentUser(user):
+    SetUserForCurrentClient(user = user)
+    if getClientIdentifier() != CLIENT_UNKNOWN:
+        LoadOrCreateGlobalPlaylist()
+    return getCurrentUser()
+
+
+@route(PREFIX +'/users/delete')
+def deleteUser(user):
+    if user != None and len(user) > 0:
+        playlistsName = '%s%s' % (user, FILE_ALLPLAYLIST_SUFFIX)
+        playlistsName = Core.storage.join_path(GetSupportPath('Data', 'DataItems'), playlistsName)        
+        playlistsElem = LoadGlobalPlaylistsFile(playlistsName = playlistsName)
+        if playlistsElem != None:
+            allPlaylists = FillGlobalPlaylists(playlistsElem = playlistsElem)
+            for playlistkey in allPlaylists.keys():
+                # Delete the playlist file(s)
+                DeleteSingleFile(filename = GetPlaylistFileNameUser(user = user, playlistkey = playlistkey))
+                DeleteSingleFile(filename = GetPlaylistFileNameUser(user = user, playlistkey = playlistkey, suffix = FILE_SUFFIX_ONDECK))
+                DeleteSingleFile(filename = GetPlaylistFileNameUser(user = user, playlistkey = playlistkey, suffix = FILE_SUFFIX_STARTED))
+                # Remove the playlist from the list
+        DeleteSingleFile(filename = playlistsName)
+        # update the default users for all clients if neccesary
+        LoadGlobalUsers()
+        SaveGlobalUsers()
+    return getCurrentUser()
+
+
 @route(PREFIX +'/playlists')
 def getAllPlaylists():
     oc = ObjectContainer(title1 = 'All playlists', no_cache = True)
-    
+    logRequest()
     playlistsElem = LoadGlobalPlaylistsFile(playlistsName = getPlaylistName())
     if playlistsElem != None:
         for playlist in playlistsElem.xpath(PL_XPATH_PLAYLIST):
@@ -1534,6 +1594,9 @@ def GetSupportPath(directory, subdirectory = None):
 
 
 def GetPlaylistFileName(playlistkey, suffix = ""):
-    playlist_filename = '%s - %s%s.xml' % (getUser(), playlistkey, suffix)
-    return Core.storage.join_path(GetSupportPath('Data', 'DataItems'), playlist_filename)
+    return GetPlaylistFileNameUser(user = getUser(), playlistkey = playlistkey, suffix = suffix)
 
+
+def GetPlaylistFileNameUser(user, playlistkey, suffix = ""):
+    playlist_filename = '%s - %s%s.xml' % (user, playlistkey, suffix)
+    return Core.storage.join_path(GetSupportPath('Data', 'DataItems'), playlist_filename)
