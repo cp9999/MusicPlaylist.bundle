@@ -85,6 +85,8 @@ DICT_PLAYING_KEY_EXPIRED = 'keyexpired'
 
 #Request Header
 REQUEST_HEADER_CLIENTID = 'X-Plex-Client-Identifier'
+REQUEST_HEADER_HOST = 'Host'
+
 # Client / User information
 CLIENT_UNKNOWN = 'Unknown'
 CLIENT_USER_LIST = 'client_user_list'
@@ -294,12 +296,18 @@ def PlaylistMenu(title, playlistkey, mode):
     
     # load the playlist
     # This is an: etree.Element XML Element 
-    pms_url = 'http://%s:%s' %(Prefs[PREFS__PLEXIP], Prefs[PREFS__PLEXPORT])
     suffix = ""
     if mode == PL_MODE_PLAY_ONDECK:
         suffix = FILE_SUFFIX_ONDECK
     playlist = LoadSinglePlaylist(playlistkey = playlistkey, createifmissing = False, suffix = suffix)
     if playlist != None:
+        use_callback = False
+        if Client.Platform != ClientPlatform.Windows and Prefs[PREFS__USE_ONDECK] == True:
+            host = getHostFromRequest()
+            pms_url = '%s:%s' %(Prefs[PREFS__PLEXIP], Prefs[PREFS__PLEXPORT])
+            local_host = '127.0.0.1:%s' % (Prefs[PREFS__PLEXPORT])
+            use_callback = host != None and (host == local_host or host == pms_url)
+
         tracks = playlist.xpath(PL_XPATH_TRACK)
         # Load shuffled
         if len(tracks) > 1 and mode == PL_MODE_PLAY_SHUFFLE:
@@ -307,8 +315,11 @@ def PlaylistMenu(title, playlistkey, mode):
         track_nr = 0
         for track in tracks:
             track_nr += 1
-            oc.add(createTrackObject(track = track, index = track_nr, pms_url = pms_url, playlistkey = playlistkey))
-        if Prefs[PREFS__USE_ONDECK] == True:
+            oc.add(createTrackObject(track = track,
+                                     index = track_nr,
+                                     playlistkey = playlistkey,
+                                     use_callback = use_callback))
+        if Prefs[PREFS__USE_ONDECK] == True and use_callback == True:
             if mode != PL_MODE_PLAY_ONDECK:
                 SaveSinglePlaylist(playlistkey = playlistkey, playlist = playlist, suffix = FILE_SUFFIX_STARTED)
             else:
@@ -318,7 +329,7 @@ def PlaylistMenu(title, playlistkey, mode):
     return showMessage(message_text = L(TEXT_MSG_EMPTY_PLAYLIST) )
 
 
-def createTrackObjectURL(track, index, pms_url, playlistkey):
+def createTrackObjectURL(track, index, playlistkey):
     title = trackTitle(title = track.get(ATTR_TITLE), index = index)
     key = track.get(ATTR_KEY)
     url = URL_MUSIC_PLAYLIST + '?playlistkey=%s&trackkey=%s' % (playlistkey, key)
@@ -327,26 +338,24 @@ def createTrackObjectURL(track, index, pms_url, playlistkey):
                               duration = attributeAsInt(track.get(ATTR_DURATION))
                               )
     if track.get(ATTR_THUMB) != None:
-        trackObject.thumb = pms_url + track.get(ATTR_THUMB)
+        trackObject.thumb = track.get(ATTR_THUMB)
     return trackObject
 
 
-def createTrackObject(track, index, pms_url, playlistkey):
+def createTrackObject(track, index, playlistkey, use_callback):
     title = trackTitle(title = track.get(ATTR_TITLE), index = index)
     key = track.get(ATTR_KEY)
     ratingKey = track.get(ATTR_RATINGKEY)
-    if track.get(ATTR_PMS_URL) != None:
-        pms_url = track.get(ATTR_PMS_URL)
-    trackObject = TrackObject(title = title, key = pms_url + key, rating_key = ratingKey)
+
+    trackObject = TrackObject(title = title, key = key, rating_key = ratingKey)
     trackObject.duration = attributeAsInt(track.get(ATTR_DURATION))
     #if track.get('art') != None:
     #    to.art = track.get('art')
     if track.get(ATTR_THUMB) != None:
-        trackObject.thumb = pms_url + track.get(ATTR_THUMB)
+        trackObject.thumb = track.get(ATTR_THUMB)
     partkey = track.get(ATTR_PARTKEY)    
-    if not partkey.startswith('http'):
-        partkey = pms_url + partkey
-    if Client.Platform == ClientPlatform.Windows:
+
+    if use_callback == False:
         mediaObject = MediaObject( parts = [PartObject(key = partkey)] )
     else:
         mediaObject = MediaObject( parts = [PartObject(key = Callback(playSingleTrack,
@@ -382,6 +391,12 @@ def playSingleTrack(track_url, trackkey, index, playlistkey, duration):
             
     return Redirect(track_url)
     pass
+
+
+def getHostFromRequest():
+    if REQUEST_HEADER_HOST in Request.Headers.keys():
+        return Request.Headers[REQUEST_HEADER_HOST]
+    return None
 
 
 def setPlaying(playlistkey, trackkey, duration):
