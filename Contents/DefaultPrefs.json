@@ -40,5 +40,11 @@
         "label": "Remove from 'On deck' when percentage played",
         "type": "text",
         "default": "50"
-    }
+    },
+    {
+        "id": "allow_video",
+        "label": "Allow videos (experimental!)",
+        "type": "bool",
+        "default": "False"
+    }    
 ]

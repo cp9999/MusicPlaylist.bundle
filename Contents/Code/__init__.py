@@ -67,7 +67,7 @@ ICON = 'icon-default.png'
 
 # File version
 CURRENT_VERSION_ALL = "1"
-CURRENT_VERSION_SINGLE = "1"
+CURRENT_VERSION_SINGLE = "2"
 
 # Preferences
 PREFS__USERNAME = 'username'
@@ -77,6 +77,7 @@ PREFS__CONFIRM_DELETE_PL = 'confirm_delete_playlist'
 PREFS__CONFIRM_REMOVE_TR = 'confirm_remove_track'
 PREFS__USE_ONDECK = 'use_ondeck'
 PREFS__ONDECK_PLAYED = 'time_ondeck'
+PREFS__ALLOW_VIDEO = 'allow_video'
 
 DICT_KEY_PLAYING = 'playing'
 DICT_PLAYING_KEY = 'key'
@@ -86,6 +87,7 @@ DICT_PLAYING_KEY_EXPIRED = 'keyexpired'
 #Request Header
 REQUEST_HEADER_CLIENTID = 'X-Plex-Client-Identifier'
 REQUEST_HEADER_HOST = 'Host'
+REQUEST_HEADER_USERAGENT = 'User-Agent'
 
 # Client / User information
 CLIENT_UNKNOWN = 'Unknown'
@@ -102,12 +104,14 @@ ATTR_KEY = 'key'
 ATTR_TITLE = 'title'
 ATTR_RATINGKEY = 'ratingKey'
 ATTR_DURATION = 'duration'
+ATTR_TYPE = 'type'
 ATTR_THUMB = 'thumb'
 ATTR_ART = 'art'
 ATTR_PARTKEY = 'partkey'
 ATTR_BITRATE = 'bitrate'
 ATTR_AUDIOCHANNELS = 'audioChannels'
 ATTR_AUDIOCODEC = 'audioCodec'
+ATTR_VIDEOCODEC = 'videoCodec'
 ATTR_CONTAINER = 'container'
 ATTR_VIEWGROUP = 'viewGroup'
 ATTR_SEARCH = 'search'
@@ -115,6 +119,11 @@ ATTR_PROMPT = 'prompt'
 ATTR_PLTYPE = 'playlisttype'
 ATTR_DESCR = 'description'
 ATTR_PMS_URL = 'pmsurl'
+ATTR_TRACK_DURATION = 'durationTracks'
+
+# Media object types
+OBJECT_TYPE_TRACK = 'track'
+OBJECT_TYPE_MOVIE = 'movie'
 
 # Create new playlist / maintenance
 NEW_PL_TITLE = 'title'
@@ -145,6 +154,7 @@ PMS_XPATH_DIRECTORY = '//Directory'
 PMS_XPATH_TRACK = '//Track'
 PMS_XPATH_MEDIA = '//Media'
 PMS_XPATH_PART = '//Part'
+PMS_XPATH_VIDEO = '//Video'
 
 
 # Resource stings
@@ -154,6 +164,7 @@ TEXT_PREFERENCES = "PREFERENCES"
 TEXT_MENU_ACTION_PLAYLIST_MAINTENANCE = "MENU_ACTION_PLAYLIST_MAINTENANCE"
 TEXT_MENU_ACTION_CREATE_PLAYLIST = "MENU_ACTION_CREATE_PLAYLIST"
 TEXT_MENU_ACTION_ADD_TRACKS = "MENU_ACTION_ADD_TRACKS"
+TEXT_MENU_ACTION_ADD_MOVIES = "MENU_ACTION_ADD_MOVIES"
 TEXT_MENU_ACTION_REMOVE_TRACKS = "MENU_ACTION_REMOVE_TRACKS"
 TEXT_MENU_ACTION_REMOVE_TRACK = "MENU_ACTION_REMOVE_TRACK"
 TEXT_MENU_ACTION_MOVE_TRACK = "MENU_ACTION_MOVE_TRACK"
@@ -254,7 +265,7 @@ def MainMenu():
         
     allPlaylists = LoadGlobalPlaylists()
     for playlistkey in allPlaylists.keys():
-        listtitle = playlistTitle(playlist_dict = allPlaylists[playlistkey], include_duration = True)
+        listtitle = playlistTitle(playlist_dict = allPlaylists[playlistkey], include_duration = True, use_total_duration = False)
         oc.add(PopupDirectoryObject(key = Callback(OpenPlaylistMenu, title = listtitle, playlistkey = playlistkey),
                                     title = listtitle))
       
@@ -294,6 +305,7 @@ def PlaylistMenu(title, playlistkey, mode):
                          no_cache = True)
     oc.content = ContainerContent.Tracks
     
+    logRequest()
     # load the playlist
     # This is an: etree.Element XML Element 
     suffix = ""
@@ -308,17 +320,42 @@ def PlaylistMenu(title, playlistkey, mode):
             local_host = '127.0.0.1:%s' % (Prefs[PREFS__PLEXPORT])
             use_callback = host != None and (host == local_host or host == pms_url)
 
-        tracks = playlist.xpath(PL_XPATH_TRACK)
+        playlist_version = attributeAsInt(playlist.get(ATTR_VERSION), 0)
+        include_movies = allowMovieObjects()
+        content_type = None
+        tracks_xpath = PL_XPATH_TRACK
+        if include_movies == False and playlist_version > 1:
+            tracks_xpath = '%s[@type="%s"]' % (PL_XPATH_TRACK, OBJECT_TYPE_TRACK)
+        tracks = playlist.xpath(tracks_xpath)
         # Load shuffled
         if len(tracks) > 1 and mode == PL_MODE_PLAY_SHUFFLE:
             shuffle(tracks)
         track_nr = 0
         for track in tracks:
             track_nr += 1
-            oc.add(createTrackObject(track = track,
-                                     index = track_nr,
-                                     playlistkey = playlistkey,
-                                     use_callback = use_callback))
+            track_type = track.get(ATTR_TYPE)
+            if track_type != None and track_type == OBJECT_TYPE_MOVIE:
+                if include_movies:
+                    oc.add(createMovieObject(track = track,
+                                             index = track_nr,
+                                             playlistkey = playlistkey,
+                                             use_callback = use_callback))
+                if content_type == None:
+                    content_type = ContainerContent.GenericVideos
+                else:
+                    content_type = ContainerContent.Mixed
+            else:
+                oc.add(createTrackObject(track = track,
+                                         index = track_nr,
+                                         playlistkey = playlistkey,
+                                         use_callback = use_callback))
+                if content_type == None:
+                    content_type = ContainerContent.Tracks
+                else:
+                    content_type = ContainerContent.Mixed
+        if content_type != None:
+            oc.content = content_type
+        
         if Prefs[PREFS__USE_ONDECK] == True and use_callback == True:
             if mode != PL_MODE_PLAY_ONDECK:
                 SaveSinglePlaylist(playlistkey = playlistkey, playlist = playlist, suffix = FILE_SUFFIX_STARTED)
@@ -391,6 +428,33 @@ def playSingleTrack(track_url, trackkey, index, playlistkey, duration):
             
     return Redirect(track_url)
     pass
+
+
+def createMovieObject(track, index, playlistkey, use_callback):
+    title = trackTitle(title = track.get(ATTR_TITLE), index = index)
+    key = track.get(ATTR_KEY)
+    ratingKey = track.get(ATTR_RATINGKEY)
+
+    trackObject = VideoClipObject(title = title, key = key, rating_key = ratingKey)
+    trackObject.duration = attributeAsInt(track.get(ATTR_DURATION))
+    #if track.get('art') != None:
+    #    to.art = track.get('art')
+    if track.get(ATTR_THUMB) != None:
+        trackObject.thumb = track.get(ATTR_THUMB)
+    partkey = track.get(ATTR_PARTKEY)    
+
+    mediaObject = MediaObject( parts = [PartObject(key = partkey)] )
+    mediaObject.duration = trackObject.duration
+    mediaObject.bitrate = attributeAsInt(track.get(ATTR_BITRATE))
+    mediaObject.audio_channels = attributeAsInt(track.get(ATTR_AUDIOCHANNELS))
+    if track.get(ATTR_AUDIOCODEC) != None:
+        mediaObject.audio_codec = track.get(ATTR_AUDIOCODEC)
+    if track.get(ATTR_CONTAINER) != None:
+        mediaObject.container = track.get(ATTR_CONTAINER)           
+    if track.get(ATTR_VIDEOCODEC) != None:
+        mediaObject.video_codec = track.get(ATTR_VIDEOCODEC)
+    trackObject.add(mediaObject)
+    return trackObject
 
 
 def getHostFromRequest():
@@ -513,7 +577,9 @@ def MaintenanceMenu(title):
     newsetting = { NEW_PL_TITLE : 'New playlist', NEW_PL_TYPE : PL_TYPE_SIMPLE, NEW_PL_DESCRIPTION : ''}
     playlists_present = (allPlaylists != None and len(allPlaylists) > 0)
     if playlists_present:
-        oc.add(DirectoryObject(key = Callback(BrowseMusicMenu, title = L(TEXT_MENU_ACTION_ADD_TRACKS)), title = L(TEXT_MENU_ACTION_ADD_TRACKS)))  
+        oc.add(DirectoryObject(key = Callback(BrowseMusicMenu, title = L(TEXT_MENU_ACTION_ADD_TRACKS)), title = L(TEXT_MENU_ACTION_ADD_TRACKS)))
+        if allowMovieObjects():
+            oc.add(DirectoryObject(key = Callback(BrowseMovieMenu, title = L(TEXT_MENU_ACTION_ADD_MOVIES)), title = L(TEXT_MENU_ACTION_ADD_MOVIES)))  
         oc.add(DirectoryObject(key = Callback(MaintainTracksMenu, title = L(TEXT_MENU_ACTION_EDIT_PLAYLIST)), title = L(TEXT_MENU_ACTION_EDIT_PLAYLIST)))  
         oc.add(DirectoryObject(key = Callback(RenamePlaylistMenu, title = L(TEXT_MENU_ACTION_RENAME_PLAYLIST)), title = L(TEXT_MENU_ACTION_RENAME_PLAYLIST)))
     oc.add(DirectoryObject(key = Callback(CreatePlaylistMenu, settings = newsetting), title = L(TEXT_MENU_ACTION_CREATE_PLAYLIST)))  
@@ -780,7 +846,7 @@ def addPlaylist(settings, returnkeyonly):
     elNewPlaylist.set(ATTR_DESCR, settings[NEW_PL_DESCRIPTION])
     
     # For now, just set the title. Tobe changed to store the settings object in the allPlaylists dict
-    allPlaylists[playlistKey] = { ATTR_TITLE : settings[NEW_PL_TITLE], ATTR_DURATION : 0}
+    allPlaylists[playlistKey] = { ATTR_TITLE : settings[NEW_PL_TITLE], ATTR_DURATION : 0, ATTR_TRACK_DURATION : 0}
     SaveGlobalPlaylist(allPlaylists = allPlaylists, playlistsElem = playlistsElem)
     
     # Also create the playlist.xml file
@@ -926,14 +992,24 @@ def CancelAction(title, mode, params = {}):
 ####################################################################################################
 
 #@route(PREFIX +'/browsemusic')
-def BrowseMusicMenu(title):    
+def BrowseMusicMenu(title):
+    section_xpath = '%s[@scanner="Plex Music Scanner"]' % PMS_XPATH_DIRECTORY
+    return BrowseMainSectionMenu(title = title, section_xpath = section_xpath)
+
+#@route(PREFIX +'/browsemovie')
+def BrowseMovieMenu(title):
+    section_xpath = '%s[@type="movie"]' % PMS_XPATH_DIRECTORY
+    return BrowseMainSectionMenu(title = title, section_xpath = section_xpath)
+
+#@route(PREFIX +'/browsemainsection')
+def BrowseMainSectionMenu(title, section_xpath):    
     oc = ObjectContainer(title2 = title, view_group='List')
     pms_url = 'http://%s:%s' %(Prefs[PREFS__PLEXIP], Prefs[PREFS__PLEXPORT])
     
     sectionUrl = pms_url + LIBRARY_SECTIONS
     el = XML.ElementFromURL(sectionUrl)
 
-    sections = el.xpath('%s[@scanner="Plex Music Scanner"]' % PMS_XPATH_DIRECTORY)	
+    sections = el.xpath(section_xpath)	
     for section in sections:	
         title = section.get(ATTR_TITLE)
         key = section.get(ATTR_KEY)
@@ -951,13 +1027,22 @@ def BrowseSectionMenu(parentUrl, title, section, append_trailing_slash = True):
     el = XML.ElementFromURL(sectionUrl)
   
     viewgroup = el.get(ATTR_VIEWGROUP)
-    if (viewgroup == 'track' or firstElement(el, PMS_XPATH_TRACK) != None):
+    if (viewgroup == OBJECT_TYPE_TRACK or firstElement(el, PMS_XPATH_TRACK) != None):
         tracks = el.xpath(PMS_XPATH_TRACK)
         for track in tracks:
             title = track.get(ATTR_TITLE)
             key = track.get(ATTR_KEY)
             ratingKey = track.get(ATTR_RATINGKEY)
-            oc.add(PopupDirectoryObject(key = Callback(BrowseTrackPopupMenu, key = key, tracktitle = title), title = title))
+            oc.add(PopupDirectoryObject(key = Callback(BrowseTrackPopupMenu, key = key, tracktitle = title, track_xpath = PMS_XPATH_TRACK),
+                                        title = title))
+    elif (viewgroup == OBJECT_TYPE_MOVIE or firstElement(el, PMS_XPATH_VIDEO) != None):
+        movies = el.xpath(PMS_XPATH_VIDEO)
+        for movie in movies:
+            title = movie.get(ATTR_TITLE)
+            key = movie.get(ATTR_KEY)
+            ratingKey = movie.get(ATTR_RATINGKEY)
+            oc.add(PopupDirectoryObject(key = Callback(BrowseTrackPopupMenu, key = key, tracktitle = title, track_xpath = PMS_XPATH_VIDEO),
+                                        title = title))
     else:
         sections = el.xpath(PMS_XPATH_DIRECTORY)	
         pms_url = 'http://%s:%s' %(Prefs[PREFS__PLEXIP], Prefs[PREFS__PLEXPORT])
@@ -987,26 +1072,31 @@ def SearchMenu(query, key, title):
 
 
 #@route(PREFIX +'/browsetrack')
-def BrowseTrackPopupMenu(key, tracktitle):
+def BrowseTrackPopupMenu(key, tracktitle, track_xpath = PMS_XPATH_TRACK):
     oc = ObjectContainer(title2 = L(TEXT_MENU_TITLE_TRACK_ACTIONS), no_cache = True)
     oc.title1 = L(TEXT_MENU_TITLE_TRACK_ACTIONS)
     
     allPlaylists = LoadGlobalPlaylists()
     for playlistkey in allPlaylists.keys():
         listtitle = playlistTitle(playlist_dict = allPlaylists[playlistkey], include_duration = True)
-        oc.add(PopupDirectoryObject(key = Callback(addToPlaylist, playlistkey = playlistkey, key = key, tracktitle = tracktitle , returnkeyonly = False),
+        oc.add(PopupDirectoryObject(key = Callback(addToPlaylist,
+                                                   playlistkey = playlistkey,
+                                                   key = key,
+                                                   tracktitle = tracktitle ,
+                                                   returnkeyonly = False,
+                                                   track_xpath = track_xpath),
                                     title = listtitle))
     return oc
 
 
-def addToPlaylist(playlistkey, key, tracktitle = '', returnkeyonly = False):   
+def addToPlaylist(playlistkey, key, tracktitle = '', returnkeyonly = False, track_xpath = PMS_XPATH_TRACK):   
     # use key to get the track information
     pms_url = 'http://%s:%s' %(Prefs[PREFS__PLEXIP], Prefs[PREFS__PLEXPORT])
     trackUrl = pms_url + key + '/'
     el = XML.ElementFromURL(trackUrl)
     if el == None:
         return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_ERROR_NO_METADATA, key))                      
-    track = firstElement(el, PMS_XPATH_TRACK)
+    track = firstElement(el, track_xpath)
     if track == None:
         return showMessage(message_text = Locale.LocalStringWithFormat(TEXT_ERROR_NO_TRACK_FOUND, tracktitle, key))
     if tracktitle == '':
@@ -1040,7 +1130,9 @@ def createTrackElement(playlist, track, media, part, pms_url):
     # atributes for TrackObject
     elNewtrack.set(ATTR_KEY, track.get(ATTR_KEY))                                                
     elNewtrack.set(ATTR_TITLE, track.get(ATTR_TITLE))
+    elNewtrack.set(ATTR_TYPE, track.get(ATTR_TYPE))
     elNewtrack.set(ATTR_PMS_URL, pms_url)
+    
     setAttributeIfPresent(elNewtrack, track, ATTR_RATINGKEY)
     setAttributeIfPresent(elNewtrack, part, ATTR_DURATION)
     setAttributeIfPresent(elNewtrack, track, ATTR_ART)
@@ -1050,6 +1142,9 @@ def createTrackElement(playlist, track, media, part, pms_url):
     setAttributeIfPresent(elNewtrack, media, ATTR_AUDIOCODEC)
     setAttributeIfPresent(elNewtrack, media, ATTR_AUDIOCHANNELS)
     setAttributeIfPresent(elNewtrack, media, ATTR_CONTAINER)
+    # Video attributes
+    setAttributeIfPresent(elNewtrack, media, ATTR_VIDEOCODEC)
+    
     # additional atributes for PartObject
     elNewtrack.set(ATTR_PARTKEY, part.get(ATTR_KEY))
     pass
@@ -1123,6 +1218,10 @@ def getUserForClient():
 def getClientIdentifier():
     if REQUEST_HEADER_CLIENTID in Request.Headers.keys():
         return Request.Headers[REQUEST_HEADER_CLIENTID]
+    # The client did not supply a clientId. Let's create one from the user-agent && client platform
+    if REQUEST_HEADER_USERAGENT in Request.Headers.keys():
+        client_data = "Platform: %s, User-agent: %s" % (Client.Platform , Request.Headers[REQUEST_HEADER_USERAGENT])
+        return String.Encode(client_data)
     return CLIENT_UNKNOWN
 
 
@@ -1159,7 +1258,8 @@ def FillGlobalPlaylists(playlistsElem):
     if playlistsElem != None:
         for playlist in playlistsElem.xpath(PL_XPATH_PLAYLIST):
             allPlaylists[playlist.get(ATTR_KEY)] = { ATTR_TITLE : playlist.get(ATTR_TITLE),
-                                                    ATTR_DURATION : attributeAsInt(playlist.get(ATTR_DURATION), 0)}
+                                                    ATTR_DURATION : attributeAsInt(playlist.get(ATTR_DURATION), 0),
+                                                    ATTR_TRACK_DURATION : attributeAsInt(playlist.get(ATTR_TRACK_DURATION), 0)}
     return allPlaylists
 
 		
@@ -1185,6 +1285,7 @@ def SaveGlobalPlaylist(allPlaylists, playlistsElem = None, playlistsName = ''):
                     # Update the title
                     playlist.set(ATTR_TITLE, allPlaylists[playlistKey][ATTR_TITLE])
                     playlist.set(ATTR_DURATION, str(allPlaylists[playlistKey][ATTR_DURATION]))
+                    playlist.set(ATTR_TRACK_DURATION, str(allPlaylists[playlistKey][ATTR_TRACK_DURATION]))
                 else:
                     # this playlist no longer in the global list: remove from the xml
                     playlist.getparent().remove(playlist)
@@ -1221,10 +1322,11 @@ def CreateGlobalPlaylist():
 
 def UpdateGlobalPlaylists(playlistkey, playlist):
     if playlist != None:
-        duration = attributeAsInt(playlist.get(ATTR_DURATION), 0)
+        #duration = attributeAsInt(playlist.get(ATTR_DURATION), 0)
         allPlaylists = LoadGlobalPlaylists()
         if playlistkey in allPlaylists.keys():
-            allPlaylists[playlistkey][ATTR_DURATION] = duration
+            allPlaylists[playlistkey][ATTR_DURATION] = attributeAsInt(playlist.get(ATTR_DURATION), 0)
+            allPlaylists[playlistkey][ATTR_TRACK_DURATION] = attributeAsInt(playlist.get(ATTR_TRACK_DURATION), 0)
             SaveGlobalPlaylist(allPlaylists)
     pass
 
@@ -1253,13 +1355,19 @@ def SaveSinglePlaylist(playlistkey, playlist, suffix = ""):
     if etree.iselement(playlist):
         try:
             duration = 0
+            track_duration = 0
             tracks = playlist.xpath('%s' % PL_XPATH_TRACK)
             for track in tracks:
                 duration = duration + attributeAsInt(track.get(ATTR_DURATION), 0)
+                track_type = track.get(ATTR_TYPE)
+                if track_type == None or track_type == OBJECT_TYPE_TRACK:
+                    track_duration = track_duration + attributeAsInt(track.get(ATTR_DURATION), 0)
             # Store duration in seconds
             Log.Debug("Total duration = %d" % duration)
             duration = duration // 1000
             playlist.set(ATTR_DURATION, str(duration))
+            track_duration = track_duration //1000
+            playlist.set(ATTR_TRACK_DURATION, str(track_duration))
             playlist.set(ATTR_VERSION, CURRENT_VERSION_SINGLE)
             etree.ElementTree(playlist).write(full_filename, pretty_print = True)
         except Exception:
@@ -1318,6 +1426,21 @@ def getNextPlaylistKey(allPlaylists):
 ##
 # Methods to provide easy access through URL. Not called directly by the plugin
 #
+
+@route(PREFIX + '/preferences')
+def getPreferences():
+    oc = ObjectContainer(title1 = 'All users', no_cache = True)
+    
+    oc.add(DirectoryObject(key = PREFS__USERNAME, title = str(Prefs[PREFS__USERNAME])))
+    oc.add(DirectoryObject(key = PREFS__PLEXIP, title = str(Prefs[PREFS__PLEXIP])))
+    oc.add(DirectoryObject(key = PREFS__PLEXPORT, title = str(Prefs[PREFS__PLEXPORT])))
+    oc.add(DirectoryObject(key = PREFS__CONFIRM_DELETE_PL, title = str(Prefs[PREFS__CONFIRM_DELETE_PL])))
+    oc.add(DirectoryObject(key = PREFS__CONFIRM_REMOVE_TR, title = str(Prefs[PREFS__CONFIRM_REMOVE_TR])))
+    oc.add(DirectoryObject(key = PREFS__USE_ONDECK, title = str(Prefs[PREFS__USE_ONDECK])))
+    oc.add(DirectoryObject(key = PREFS__ONDECK_PLAYED, title = str(Prefs[PREFS__ONDECK_PLAYED])))
+
+    oc.add(DirectoryObject(key = PREFS__ALLOW_VIDEO, title = str(allowMovieObjects())))
+    return oc
 
 
 @route(PREFIX +'/users')
@@ -1394,9 +1517,13 @@ def singlePlaylist(key):
                 track_nr += 1
                 title = track.get(ATTR_TITLE)
                 key = track.get(ATTR_KEY)
-                ratingKey = track.get(ATTR_RATINGKEY)            
+                ratingKey = track.get(ATTR_RATINGKEY)
+                track_type = track.get(ATTR_TYPE)
+                if track_type == None:
+                    track_type = OBJECT_TYPE_TRACK
                 trackObject = TrackObject(title = title, key = key,
                                           rating_key = ratingKey,
+                                          album = track_type,
                                           duration = attributeAsInt(track.get(ATTR_DURATION)))
                 oc.add(trackObject)
         return oc
@@ -1426,11 +1553,14 @@ def renameSinglePlaylist(key, newname):
 
 
 @route(PREFIX +'/tracks/add')
-def addTrackToPlaylist(playlistkey, key):
+def addTrackToPlaylist(playlistkey, key, track_type = OBJECT_TYPE_TRACK):
     if validatePlaylistKey(playlistkey):
         if not key.startswith('/'):
             key = '/library/metadata/%s' % key
-        return addToPlaylist(playlistkey = playlistkey, key = key, returnkeyonly = True)
+        track_xpath = PMS_XPATH_TRACK
+        if track_type == OBJECT_TYPE_MOVIE:
+            track_xpath = PMS_XPATH_VIDEO
+        return addToPlaylist(playlistkey = playlistkey, key = key, returnkeyonly = True, track_xpath = track_xpath)
     return showMessage('ERROR: No playlist with key %s found' % playlistkey)
 
 
@@ -1481,7 +1611,7 @@ def addAllTracksFromSection(playlist, parentUrl, section):
     el = XML.ElementFromURL(sectionUrl)  
     tracks_added = 0
     viewgroup = el.get(ATTR_VIEWGROUP)
-    if (viewgroup == 'track' or firstElement(el, PMS_XPATH_TRACK) != None):
+    if (viewgroup == OBJECT_TYPE_TRACK or firstElement(el, PMS_XPATH_TRACK) != None):
         tracks = el.xpath(PMS_XPATH_TRACK)
         for track in tracks:
             key = track.get(ATTR_KEY)
@@ -1590,9 +1720,12 @@ def trackInPlaylist(trackkey, playlist):
     return False
 
 
-def playlistTitle(playlist_dict, include_duration = False):
+def playlistTitle(playlist_dict, include_duration = False, use_total_duration = True):
     if include_duration == True:
-        duration = playlist_dict[ATTR_DURATION]
+        if use_total_duration == True or allowMovieObjects() == True:           
+            duration = playlist_dict[ATTR_DURATION]
+        else:
+            duration = playlist_dict[ATTR_TRACK_DURATION]        
         hours = duration // 3600
         minutes = (duration % 3600) // 60
         seconds = duration % 60
@@ -1615,3 +1748,11 @@ def GetPlaylistFileName(playlistkey, suffix = ""):
 def GetPlaylistFileNameUser(user, playlistkey, suffix = ""):
     playlist_filename = '%s - %s%s.xml' % (user, playlistkey, suffix)
     return Core.storage.join_path(GetSupportPath('Data', 'DataItems'), playlist_filename)
+
+
+def allowMovieObjects():
+    try:
+        return Prefs[PREFS__ALLOW_VIDEO]
+    except Exception:
+        pass
+    return False

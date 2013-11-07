@@ -6,6 +6,7 @@
   "MENU_ACTION_PLAYLIST_MAINTENANCE"     : "Playlist maintenance",
   "MENU_ACTION_CREATE_PLAYLIST"          : "Create new playlist",
   "MENU_ACTION_ADD_TRACKS"               : "Add tracks to playlist",
+  "MENU_ACTION_ADD_MOVIES"               : "Add movies to playlist",
   "MENU_ACTION_DELETE_PLAYLIST"          : "Delete playlist",
   "MENU_ACTION_EDIT_PLAYLIST"            : "Edit playlist",
   "MENU_ACTION_REMOVE_TRACKS"            : "Remove tracks from playlist",

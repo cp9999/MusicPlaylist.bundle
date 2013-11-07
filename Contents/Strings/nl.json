@@ -6,6 +6,7 @@
   "MENU_ACTION_PLAYLIST_MAINTENANCE"     : "Onderhoud afspeellijsten",
   "MENU_ACTION_CREATE_PLAYLIST"          : "Nieuwe afspeellijst toevoegen",
   "MENU_ACTION_ADD_TRACKS"               : "Liedjes toevoegen aan afspeellijst",
+  "MENU_ACTION_ADD_MOVIES"               : "Films toevoegen aan afspeellijst",
   "MENU_ACTION_DELETE_PLAYLIST"          : "Afspeellijst verwijderen",
   "MENU_ACTION_EDIT_PLAYLIST"            : "Afspeellijst bewerken",
   "MENU_ACTION_REMOVE_TRACKS"            : "Liedjes uit afspeellijst verwijderen",
