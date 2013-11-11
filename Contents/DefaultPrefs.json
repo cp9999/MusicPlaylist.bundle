@@ -9,7 +9,7 @@
         "id": "plexip",
         "label": "Plex IP",
         "type": "text",
-        "default": "192.168.0.1"
+        "default": "127.0.0.1"
     },
     {
         "id": "plexport",
