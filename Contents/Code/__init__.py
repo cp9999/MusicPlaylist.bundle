@@ -124,6 +124,7 @@ ATTR_TRACK_DURATION = 'durationTracks'
 # Media object types
 OBJECT_TYPE_TRACK = 'track'
 OBJECT_TYPE_MOVIE = 'movie'
+OBJECT_TYPE_SHOW = 'show'
 
 # Create new playlist / maintenance
 NEW_PL_TITLE = 'title'
@@ -303,6 +304,7 @@ def OpenPlaylistMenu(title, playlistkey):
 def PlaylistMenu(title, playlistkey, mode):
     oc = ObjectContainer(title2 = title, view_group='List', art = R('icon-default.png'),                         
                          no_cache = True)
+    oc.mixed_parents = True
     oc.content = ContainerContent.Tracks
     
     logRequest()
@@ -334,25 +336,24 @@ def PlaylistMenu(title, playlistkey, mode):
         for track in tracks:
             track_nr += 1
             track_type = track.get(ATTR_TYPE)
-            if track_type != None and track_type == OBJECT_TYPE_MOVIE:
+            if track_type != None and track_type != OBJECT_TYPE_TRACK:
                 if include_movies:
+                    use_episode = track_type == OBJECT_TYPE_SHOW
                     oc.add(createMovieObject(track = track,
                                              index = track_nr,
                                              playlistkey = playlistkey,
-                                             use_callback = use_callback))
-                if content_type == None:
-                    content_type = ContainerContent.GenericVideos
-                else:
-                    content_type = ContainerContent.Mixed
+                                             use_callback = use_callback,
+                                             use_episode = use_episode))
+                    if use_episode == True:
+                        content_type = getContentType(current_type = content_type, new_type = ContainerContent.Episodes)
+                    else:
+                        content_type = getContentType(current_type = content_type, new_type = ContainerContent.GenericVideos)
             else:
                 oc.add(createTrackObject(track = track,
                                          index = track_nr,
                                          playlistkey = playlistkey,
                                          use_callback = use_callback))
-                if content_type == None:
-                    content_type = ContainerContent.Tracks
-                else:
-                    content_type = ContainerContent.Mixed
+                content_type = getContentType(current_type = content_type, new_type = ContainerContent.Tracks)
         if content_type != None:
             oc.content = content_type
         
@@ -364,6 +365,13 @@ def PlaylistMenu(title, playlistkey, mode):
         return oc
                     
     return showMessage(message_text = L(TEXT_MSG_EMPTY_PLAYLIST) )
+
+def getContentType(current_type, new_type):
+    if (current_type == None):
+        return new_type
+    if (current_type != new_type):
+        return ContainerContent.Mixed
+    return new_type
 
 
 def createTrackObjectURL(track, index, playlistkey):
@@ -430,12 +438,16 @@ def playSingleTrack(track_url, trackkey, index, playlistkey, duration):
     pass
 
 
-def createMovieObject(track, index, playlistkey, use_callback):
+def createMovieObject(track, index, playlistkey, use_callback, use_episode):
     title = trackTitle(title = track.get(ATTR_TITLE), index = index)
     key = track.get(ATTR_KEY)
     ratingKey = track.get(ATTR_RATINGKEY)
 
-    trackObject = VideoClipObject(title = title, key = key, rating_key = ratingKey)
+    if use_episode == True:
+        trackObject = EpisodeObject(title = title, key = key, rating_key = ratingKey)
+    else:
+        #trackObject = VideoClipObject(title = title, key = key, rating_key = ratingKey)
+        trackObject = MovieObject(title = title, key = key, rating_key = ratingKey)
     trackObject.duration = attributeAsInt(track.get(ATTR_DURATION))
     #if track.get('art') != None:
     #    to.art = track.get('art')
@@ -1558,7 +1570,7 @@ def addTrackToPlaylist(playlistkey, key, track_type = OBJECT_TYPE_TRACK):
         if not key.startswith('/'):
             key = '/library/metadata/%s' % key
         track_xpath = PMS_XPATH_TRACK
-        if track_type == OBJECT_TYPE_MOVIE:
+        if track_type == OBJECT_TYPE_MOVIE or track_type == OBJECT_TYPE_SHOW:
             track_xpath = PMS_XPATH_VIDEO
         return addToPlaylist(playlistkey = playlistkey, key = key, returnkeyonly = True, track_xpath = track_xpath)
     return showMessage('ERROR: No playlist with key %s found' % playlistkey)
